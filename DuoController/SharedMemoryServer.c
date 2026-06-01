@@ -15,11 +15,11 @@
 #include "Driver.h"
 #include "SharedMemoryServer.tmh"
 
-// Size of the input shared memory region: header (2) + DS4 report (64)
-#define INPUT_SHM_SIZE (MESSAGE_HEADER_LEN + DS4_REPORT_SIZE)
+// Size of the input shared memory region: header (2) + DualSense report (64)
+#define INPUT_SHM_SIZE (MESSAGE_HEADER_LEN + DS_REPORT_SIZE)
 
-// Size of the output shared memory region: DS4 output report (31)
-#define OUTPUT_SHM_SIZE DS4_OUTPUT_REPORT_SIZE
+// Size of the output shared memory region: DualSense output report (47)
+#define OUTPUT_SHM_SIZE DS_OUTPUT_REPORT_SIZE
 
 // Name format strings for shared memory and event objects
 #define SHM_NAMESPACE_PREFIX L"Global\\Duo_"
@@ -314,7 +314,7 @@ DWORD CreateSharedMemoryServer(LPVOID Params)
 
 /// <summary>
 /// Worker thread that waits for input events from the DuoController library via
-/// shared memory. When data arrives, it reads the message, updates the DS4 input
+/// shared memory. When data arrives, it reads the message, updates the DualSense input
 /// report, and completes the pending read request from the manual queue.
 /// </summary>
 /// <param name="Params">Pointer to a WDFDEVICE handle.</param>
@@ -363,23 +363,23 @@ DWORD WINAPI InputSharedMemoryThread(LPVOID Params)
 
 			switch (buffer[0])
 			{
-			case DS4_INPUT_REPORT_FULL:
+			case DS_INPUT_REPORT_FULL:
 			{
-				if (buffer[1] != DS4_REPORT_SIZE)
+				if (buffer[1] != DS_REPORT_SIZE)
 				{
 					TraceEvents(TRACE_LEVEL_ERROR, TRACE_PIPE,
-						"DS4_INPUT_REPORT has incorrect size. Expected: %d, Received: %d\n",
-						DS4_REPORT_SIZE,
+						"DS_INPUT_REPORT has incorrect size. Expected: %d, Received: %d\n",
+						DS_REPORT_SIZE,
 						buffer[1]
 					);
 					break;
 				}
 
-				RtlCopyMemory(queueContext->DeviceContext->Ds4InputReport,
+				RtlCopyMemory(queueContext->DeviceContext->DsInputReport,
 					&buffer[MESSAGE_HEADER_LEN],
-					DS4_REPORT_SIZE);
+					DS_REPORT_SIZE);
 
-				CompleteReadRequest(devContext, DS4_INPUT_REPORT_FULL);
+				CompleteReadRequest(devContext, DS_INPUT_REPORT_FULL);
 				break;
 			}
 			default:
@@ -512,9 +512,9 @@ VOID ShutdownSharedMemoryServer(PDEVICE_CONTEXT devContext)
 
 /// <summary>
 /// Retrieves the next pending read request from the manual queue, copies the current
-/// DS4 input report into the request's output buffer, and completes the request.
+/// DualSense input report into the request's output buffer, and completes the request.
 /// </summary>
-/// <param name="devContext">The device context containing the DS4 input report.</param>
+/// <param name="devContext">The device context containing the DualSense input report.</param>
 /// <param name="ReportId">The report type identifier (currently unused).</param>
 VOID CompleteReadRequest(PDEVICE_CONTEXT devContext, UCHAR ReportId)
 {
@@ -560,8 +560,8 @@ VOID CompleteReadRequest(PDEVICE_CONTEXT devContext, UCHAR ReportId)
 
 	if (bytesReturned > 1)
 	{
-		RtlCopyMemory(pReadReport, devContext->Ds4InputReport,
-			bytesReturned < DS4_REPORT_SIZE ? bytesReturned : DS4_REPORT_SIZE);
+		RtlCopyMemory(pReadReport, devContext->DsInputReport,
+			bytesReturned < DS_REPORT_SIZE ? bytesReturned : DS_REPORT_SIZE);
 	}
 
 	WdfRequestCompleteWithInformation(reqRead, status, bytesReturned);

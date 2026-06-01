@@ -25,10 +25,10 @@ DriverVer=
 %ManufacturerName%=Standard,NT$ARCH$.10.0...17134
 
 [Standard.NT$ARCH$.10.0...17134]
-%ROOT\VID_054C&PID_05C4.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_05C4
+%ROOT\VID_054C&PID_0DF2.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_0DF2
 
 [ControlFlags]
-ExcludeFromSelect=ROOT\VID_054C&PID_05C4
+ExcludeFromSelect=ROOT\VID_054C&PID_0DF2
 
 [ClassInstall32]
 AddReg=DuoControllerClass_RegistryAdd
@@ -104,6 +104,4 @@ ManufacturerName="Black-Seraph"
 ClassName="DuoController Devices"
 DiskName = "DuoController Installation Disk"
 WudfRdDisplayName="DuoController User-mode Driver"
-ROOT\VID_054C&PID_05C4.DeviceName="DuoController Device"
-
-Regpath="SYSTEM\CurrentControlSet\Control\GameInput\Devices\054C05C400010004"
+ROOT\VID_054C&PID_0DF2.DeviceName="DualSense Edge Wireless Controller"

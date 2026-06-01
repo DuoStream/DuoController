@@ -1,4 +1,8 @@
 <p align="center">
+  <img src=".github/images/logo.png" alt="Logo" width="256" />
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Windows-10+-0078D6?style=for-the-badge&logo=windows&logoColor=white" />
   <img src="https://img.shields.io/badge/UMDF-2.0-7F52FF?style=for-the-badge&logo=windows&logoColor=white" />
   <img src="https://img.shields.io/badge/x64-00599C?style=for-the-badge&logo=c&logoColor=white" />
@@ -7,7 +11,7 @@
 
 ## Overview
 
-**DuoController** is a pure userspace virtual gamepad library and UMDF driver for Windows that emulates **DualShock 4** and **Xbox One** controllers entirely from user mode.
+**DuoController** is a pure userspace virtual gamepad library and UMDF driver for Windows that emulates **DualSense Edge** and **Xbox One** controllers entirely from user mode.
 
 It is a spiritual successor to [ViGEmBus](https://github.com/ViGEm/ViGEmBus), the now-abandoned KMDF-based kernel driver, reimagined using Microsoft's **User-Mode Driver Framework (UMDF)**.
 
@@ -31,39 +35,38 @@ Kernel drivers on modern Windows **must** be submitted to the Windows Hardware D
 
 This process costs hundreds of dollars, requires a registered legal entity that fulfills Microsoft's requirements, and takes weeks of turnaround.
 
-UMDF drivers require **no such signing**. A standard code signing certificate (or even self-signing for development or small-scale publishing) is sufficient.
+UMDF drivers require **no such signing**.
+
+A standard code signing certificate (or even self-signing for development or small-scale publishing) is sufficient.
 
 This makes DuoController dramatically more accessible to:
 
 - **Independent developers**
-- **Small studios**
+- **Small teams**
 
 ## Features
 
-- **DualShock 4 Emulation** - Via HID minidriver
-- **Xbox One Emulation** - Via `xboxgipsynthetic.dll`
-- **Touchpad Support** - Full touchpad support for DualShock 4
-- **Gyroscope / Accelerometer Support** - Full gyroscope / accelerometer support for DualShock 4
-- **Force Feedback** - Full vibration / rumble callback support for both controller types
+- **Full DualSense Edge Controller Emulation** - Via HID minidriver
+- **Full Xbox One Controller Emulation** - Via `xboxgipsynthetic.dll`
 - **Session Isolation** - Isolates gamepads to the current session ID for multi-session and RDP environments
-- **Minimal Footprint** - A single DLL / INF pair, no kernel components
+- **Minimal Footprint** - A single DLL/INF pair, no kernel components
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    App["<b>Your Application</b><br/><br/><code>DuoController_Initialize()<br/><span style='white-space:nowrap;color:inherit'>DuoController_CreateController(Ds4|Xbox)</span><br/>DuoController_SendReport()<br/>DuoController_SendReportDs4()<br/>DuoController_RemoveController()<br/>DuoController_Uninitialize()</code>"]
-    DS4["<b>DS4 Path</b><br/><br/>Shared Memory<br/>DuoController UMDF Driver<br/>(HID Miniport)"]
+    App["<b>Your Service</b><br/><span style='white-space:nowrap;color:inherit;font-size:small'>Running as SYSTEM</span><br/><br/>DuoController_Initialize()<br/><span style='white-space:nowrap;color:inherit'>DuoController_CreateController(Ds|Xbox)</span><br/>DuoController_SendReport()<br/>DuoController_SendReportDs()<br/>DuoController_RemoveController()<br/>DuoController_Uninitialize()"]
+    DS["<b>DualSense Path</b><br/><br/>Shared Memory<br/>(UMDF Driver)"]
     Xbox["<b>Xbox Path</b><br/><br/>xboxgipsynthetic.dll<br/>(System API)"]
     Input["<b>Windows Game Input API</b><br/><span style='white-space:nowrap;color:inherit'>(GameInput / XInput / DirectInput / RawInput)</span>"]
 
-    App --> DS4
+    App --> DS
     App --> Xbox
-    DS4 --> Input
+    DS --> Input
     Xbox --> Input
 
     style App fill:#1a1a2e,stroke:#e94560,stroke-width:2px,color:#fff
-    style DS4 fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style DS fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
     style Xbox fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
     style Input fill:#1a1a2e,stroke:#e94560,stroke-width:2px,color:#fff
 ```
@@ -76,7 +79,7 @@ HRESULT DuoController_Initialize();
 
 // Create a virtual controller
 HRESULT DuoController_CreateController(
-    DUO_CONTROLLER_TYPE controllerType,    // DuoControllerTypeXbox or DuoControllerTypeDs4
+    DUO_CONTROLLER_TYPE controllerType,    // DuoControllerTypeXbox or DuoControllerTypeDs
     DuoController_VibrationReportCallback_t vibrationCallback,
     void* vibrationCallbackContext,
     void** controller
@@ -88,10 +91,10 @@ HRESULT DuoController_SendReport(
     DUO_CONTROLLER_INPUT_REPORT* inputReport
 );
 
-// Send DualShock 4 input report
-HRESULT DuoController_SendReportDs4(
+// Send DualSense Edge input report
+HRESULT DuoController_SendReportDs(
     void* controller,
-    DUO_CONTROLLER_INPUT_REPORT_DS4* inputReport
+    DUO_CONTROLLER_INPUT_REPORT_DS* inputReport
 );
 
 // Remove a virtual controller
@@ -119,8 +122,8 @@ HRESULT DuoController_Uninitialize();
 
 | Project | Description |
 |---|---|
-| `DuoController` | The UMDF driver DLL and library - implements the HID minidriver, shared memory server, and client API |
-| `DuoControllerSample` | A minimal C sample showing library usage with both Xbox and DS4 controller types |
+| `DuoController` | The UMDF driver DLL and library — implements the HID minidriver, shared memory server, and the client API |
+| `DuoControllerSample` | A minimal C sample showing library usage for both Xbox One and DualSense Edge controller types |
 
 ## License
 

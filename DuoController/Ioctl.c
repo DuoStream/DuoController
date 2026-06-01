@@ -122,7 +122,7 @@ NTSTATUS ReadReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request, _
 
 /// <summary>
 /// Handles IOCTL_HID_WRITE_REPORT for the HID collection. Extracts the HID transfer
-/// packet, validates the buffer size, stores the DS4 output report, and writes the
+/// packet, validates the buffer size, stores the DualSense output report, and writes the
 /// response to the shared memory output client.
 /// </summary>
 /// <param name="QueueContext">The object context associated with the queue.</param>
@@ -152,13 +152,13 @@ NTSTATUS WriteReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 		return status;
 	}
 
-	// Store the DS4 output report
-	if (packet.reportBufferLen >= sizeof(DS4_OUTPUT_REPORT))
+	// Store the DualSense output report
+	if (packet.reportBufferLen >= sizeof(DS_OUTPUT_REPORT))
 	{
 		RtlCopyMemory(
-			&QueueContext->DeviceContext->Ds4OutputReport,
+			&QueueContext->DeviceContext->DsOutputReport,
 			packet.reportBuffer,
-			sizeof(DS4_OUTPUT_REPORT));
+			sizeof(DS_OUTPUT_REPORT));
 	}
 
 	QueueContext->DeviceContext->ReportPacket = packet;
@@ -334,7 +334,7 @@ NTSTATUS GetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 		return status;
 	}
 
-	// For DS4 feature reports, return zero-filled buffer for all report IDs.
+	// For DualSense feature reports, return zero-filled buffer for all report IDs.
 	// Real hardware returns calibration data; for a virtual device this is sufficient.
 	UNREFERENCED_PARAMETER(QueueContext);
 

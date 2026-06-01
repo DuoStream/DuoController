@@ -7,12 +7,12 @@ typedef HRESULT (*DuoController_Uninitialize_t)();
 typedef HRESULT(*DuoController_CreateController_t)(DUO_CONTROLLER_TYPE controllerType, DuoController_VibrationReportCallback_t vibrationCallback, void* vibrationCallbackContext, void** controller);
 typedef HRESULT(*DuoController_RemoveController_t)(void* controller);
 typedef HRESULT(*DuoController_SendReport_t)(void* controller, DUO_CONTROLLER_INPUT_REPORT* inputReport);
-typedef HRESULT(*DuoController_SendReportDs4_t)(void* controller, DUO_CONTROLLER_INPUT_REPORT_DS4* inputReport);
+typedef HRESULT(*DuoController_SendReportDs_t)(void* controller, DUO_CONTROLLER_INPUT_REPORT_DS* inputReport);
 
 typedef enum _SAMPLE_CONTROLLER_TYPE
 {
 	SampleControllerTypeXbox,
-	SampleControllerTypeDs4
+	SampleControllerTypeDs
 } SAMPLE_CONTROLLER_TYPE;
 
 /// <summary>
@@ -94,11 +94,11 @@ static void RunXboxLoop(void* controller, DuoController_SendReport_t sendReport)
 }
 
 /// <summary>
-/// Runs the DS4 input report loop.
+/// Runs the DualSense input report loop.
 /// </summary>
-static void RunDs4Loop(void* controller, DuoController_SendReportDs4_t sendReportDs4)
+static void RunDsLoop(void* controller, DuoController_SendReportDs_t sendReportDs)
 {
-	DUO_CONTROLLER_INPUT_REPORT_DS4 inputReport;
+	DUO_CONTROLLER_INPUT_REPORT_DS inputReport;
 	memset(&inputReport, 0, sizeof(inputReport));
 	char lineBuffer[128];
 
@@ -110,7 +110,7 @@ static void RunDs4Loop(void* controller, DuoController_SendReportDs4_t sendRepor
 		if (strcmp(lineBuffer, "reset\n") == 0)
 		{
 			memset(&inputReport, 0, sizeof(inputReport));
-			HRESULT hr = sendReportDs4(controller, &inputReport);
+			HRESULT hr = sendReportDs(controller, &inputReport);
 			wprintf(SUCCEEDED(hr) ? L"Report sent\n" : L"Send failed: 0x%08X\n", hr);
 			continue;
 		}
@@ -127,44 +127,52 @@ static void RunDs4Loop(void* controller, DuoController_SendReportDs4_t sendRepor
 		else if (strcmp(fieldName, "LeftStickY") == 0) inputReport.LeftStickY = (BYTE)value;
 		else if (strcmp(fieldName, "RightStickX") == 0) inputReport.RightStickX = (BYTE)value;
 		else if (strcmp(fieldName, "RightStickY") == 0) inputReport.RightStickY = (BYTE)value;
-		else if (strcmp(fieldName, "Hat") == 0)         inputReport.Hat = (BYTE)value;
-		else if (strcmp(fieldName, "Square") == 0)      inputReport.Square = (BYTE)value;
-		else if (strcmp(fieldName, "Cross") == 0)       inputReport.Cross = (BYTE)value;
-		else if (strcmp(fieldName, "Circle") == 0)      inputReport.Circle = (BYTE)value;
-		else if (strcmp(fieldName, "Triangle") == 0)    inputReport.Triangle = (BYTE)value;
-		else if (strcmp(fieldName, "L1") == 0)          inputReport.L1 = (BYTE)value;
-		else if (strcmp(fieldName, "R1") == 0)          inputReport.R1 = (BYTE)value;
-		else if (strcmp(fieldName, "L2") == 0)          inputReport.L2 = (BYTE)value;
-		else if (strcmp(fieldName, "R2") == 0)          inputReport.R2 = (BYTE)value;
-		else if (strcmp(fieldName, "Share") == 0)       inputReport.Share = (BYTE)value;
-		else if (strcmp(fieldName, "Options") == 0)     inputReport.Options = (BYTE)value;
-		else if (strcmp(fieldName, "L3") == 0)          inputReport.L3 = (BYTE)value;
-		else if (strcmp(fieldName, "R3") == 0)          inputReport.R3 = (BYTE)value;
-		else if (strcmp(fieldName, "PS") == 0)          inputReport.PS = (BYTE)value;
-		else if (strcmp(fieldName, "Touchpad") == 0)    inputReport.Touchpad = (BYTE)value;
-		else if (strcmp(fieldName, "LeftTrigger") == 0) inputReport.LeftTrigger = (BYTE)value;
-		else if (strcmp(fieldName, "RightTrigger") == 0) inputReport.RightTrigger = (BYTE)value;
-		else if (strcmp(fieldName, "GyroX") == 0)       inputReport.GyroX = (INT16)value;
-		else if (strcmp(fieldName, "GyroY") == 0)       inputReport.GyroY = (INT16)value;
-		else if (strcmp(fieldName, "GyroZ") == 0)       inputReport.GyroZ = (INT16)value;
-		else if (strcmp(fieldName, "AccelX") == 0)      inputReport.AccelX = (INT16)value;
-		else if (strcmp(fieldName, "AccelY") == 0)      inputReport.AccelY = (INT16)value;
-		else if (strcmp(fieldName, "AccelZ") == 0)      inputReport.AccelZ = (INT16)value;
-		else if (strcmp(fieldName, "Touch1Active") == 0) inputReport.Touch1Active = (BYTE)value;
-		else if (strcmp(fieldName, "Touch1X") == 0)     inputReport.Touch1X = (USHORT)value;
-		else if (strcmp(fieldName, "Touch1Y") == 0)     inputReport.Touch1Y = (USHORT)value;
-		else if (strcmp(fieldName, "Touch2Active") == 0) inputReport.Touch2Active = (BYTE)value;
-		else if (strcmp(fieldName, "Touch2X") == 0)     inputReport.Touch2X = (USHORT)value;
-		else if (strcmp(fieldName, "Touch2Y") == 0)     inputReport.Touch2Y = (USHORT)value;
+		else if (strcmp(fieldName, "DPad") == 0)        inputReport.DPad = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonSquare") == 0)  inputReport.ButtonSquare = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonCross") == 0)   inputReport.ButtonCross = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonCircle") == 0)  inputReport.ButtonCircle = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonTriangle") == 0) inputReport.ButtonTriangle = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonL1") == 0)      inputReport.ButtonL1 = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonR1") == 0)      inputReport.ButtonR1 = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonL2") == 0)      inputReport.ButtonL2 = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonR2") == 0)      inputReport.ButtonR2 = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonCreate") == 0)  inputReport.ButtonCreate = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonOptions") == 0) inputReport.ButtonOptions = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonL3") == 0)      inputReport.ButtonL3 = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonR3") == 0)      inputReport.ButtonR3 = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonHome") == 0)    inputReport.ButtonHome = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonPad") == 0)     inputReport.ButtonPad = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonMute") == 0)    inputReport.ButtonMute = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonLeftFunction") == 0)  inputReport.ButtonLeftFunction = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonRightFunction") == 0) inputReport.ButtonRightFunction = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonLeftPaddle") == 0)    inputReport.ButtonLeftPaddle = (BYTE)value;
+		else if (strcmp(fieldName, "ButtonRightPaddle") == 0)   inputReport.ButtonRightPaddle = (BYTE)value;
+		else if (strcmp(fieldName, "TriggerLeft") == 0)   inputReport.TriggerLeft = (BYTE)value;
+		else if (strcmp(fieldName, "TriggerRight") == 0)  inputReport.TriggerRight = (BYTE)value;
+		else if (strcmp(fieldName, "AngularVelocityX") == 0) inputReport.AngularVelocityX = (INT16)value;
+		else if (strcmp(fieldName, "AngularVelocityY") == 0) inputReport.AngularVelocityY = (INT16)value;
+		else if (strcmp(fieldName, "AngularVelocityZ") == 0) inputReport.AngularVelocityZ = (INT16)value;
+		else if (strcmp(fieldName, "AccelerometerX") == 0)  inputReport.AccelerometerX = (INT16)value;
+		else if (strcmp(fieldName, "AccelerometerY") == 0)  inputReport.AccelerometerY = (INT16)value;
+		else if (strcmp(fieldName, "AccelerometerZ") == 0)  inputReport.AccelerometerZ = (INT16)value;
+		else if (strcmp(fieldName, "TouchFinger1Index") == 0)       inputReport.TouchData.Finger[0].Index = (UINT32)value;
+		else if (strcmp(fieldName, "TouchFinger1NotTouching") == 0) inputReport.TouchData.Finger[0].NotTouching = (UINT32)value;
+		else if (strcmp(fieldName, "TouchFinger1X") == 0)           inputReport.TouchData.Finger[0].FingerX = (UINT32)value;
+		else if (strcmp(fieldName, "TouchFinger1Y") == 0)           inputReport.TouchData.Finger[0].FingerY = (UINT32)value;
+		else if (strcmp(fieldName, "TouchFinger2Index") == 0)       inputReport.TouchData.Finger[1].Index = (UINT32)value;
+		else if (strcmp(fieldName, "TouchFinger2NotTouching") == 0) inputReport.TouchData.Finger[1].NotTouching = (UINT32)value;
+		else if (strcmp(fieldName, "TouchFinger2X") == 0)           inputReport.TouchData.Finger[1].FingerX = (UINT32)value;
+		else if (strcmp(fieldName, "TouchFinger2Y") == 0)           inputReport.TouchData.Finger[1].FingerY = (UINT32)value;
+		else if (strcmp(fieldName, "TouchTimestamp") == 0)          inputReport.TouchData.Timestamp = (BYTE)value;
 		else
 		{
-			wprintf(L"Unknown DS4 field: %s\n", fieldName);
+			wprintf(L"Unknown DualSense field: %s\n", fieldName);
 			continue;
 		}
 
 		wprintf(L"Sending report in 3 seconds...\n");
 		Sleep(3000);
-		HRESULT hr = sendReportDs4(controller, &inputReport);
+		HRESULT hr = sendReportDs(controller, &inputReport);
 		wprintf(SUCCEEDED(hr) ? L"Report sent\n" : L"Send failed: 0x%08X\n", hr);
 	}
 }
@@ -177,7 +185,7 @@ int main(int argc, char* argv[])
 	HRESULT result = S_OK;
 
 	wprintf(L"DuoController Sample Application\n");
-	wprintf(L"Select controller type: 1 = Xbox, 2 = DS4\n");
+	wprintf(L"Select controller type: 1 = Xbox, 2 = DualSense\n");
 	wprintf(L"Choice: ");
 
 	char choiceBuffer[16];
@@ -186,7 +194,7 @@ int main(int argc, char* argv[])
 	{
 		int choice = atoi(choiceBuffer);
 		if (choice == 2)
-			sampleType = SampleControllerTypeDs4;
+			sampleType = SampleControllerTypeDs;
 	}
 
 	HMODULE duoController = LoadLibraryW(L"DuoController\\DuoController.dll");
@@ -201,14 +209,14 @@ int main(int argc, char* argv[])
 	DuoController_CreateController_t DuoController_CreateController_Dynamic = (DuoController_CreateController_t)GetProcAddress(duoController, "DuoController_CreateController");
 	DuoController_RemoveController_t DuoController_RemoveController_Dynamic = (DuoController_RemoveController_t)GetProcAddress(duoController, "DuoController_RemoveController");
 	DuoController_SendReport_t DuoController_SendReport_Dynamic = (DuoController_SendReport_t)GetProcAddress(duoController, "DuoController_SendReport");
-	DuoController_SendReportDs4_t DuoController_SendReportDs4_Dynamic = (DuoController_SendReportDs4_t)GetProcAddress(duoController, "DuoController_SendReportDs4");
+	DuoController_SendReportDs_t DuoController_SendReportDs_Dynamic = (DuoController_SendReportDs_t)GetProcAddress(duoController, "DuoController_SendReportDs");
 
 	if (DuoController_Initialize_Dynamic == NULL ||
 		DuoController_Uninitialize_Dynamic == NULL ||
 		DuoController_CreateController_Dynamic == NULL ||
 		DuoController_RemoveController_Dynamic == NULL ||
 		(sampleType == SampleControllerTypeXbox && DuoController_SendReport_Dynamic == NULL) ||
-		(sampleType == SampleControllerTypeDs4 && DuoController_SendReportDs4_Dynamic == NULL))
+		(sampleType == SampleControllerTypeDs && DuoController_SendReportDs_Dynamic == NULL))
 	{
 		wprintf(L"Failed to resolve required DuoController functions\n");
 		FreeLibrary(duoController);
@@ -224,7 +232,7 @@ int main(int argc, char* argv[])
 
 	void* controller = NULL;
 	result = DuoController_CreateController_Dynamic(
-		sampleType == SampleControllerTypeDs4 ? DuoControllerTypeDs4 : DuoControllerTypeXbox,
+		sampleType == SampleControllerTypeDs ? DuoControllerTypeDs : DuoControllerTypeXbox,
 		VibrationReportCallback, NULL, &controller);
 
 	if (FAILED(result))
@@ -235,8 +243,8 @@ int main(int argc, char* argv[])
 		return result;
 	}
 
-	if (sampleType == SampleControllerTypeDs4)
-		RunDs4Loop(controller, DuoController_SendReportDs4_Dynamic);
+	if (sampleType == SampleControllerTypeDs)
+		RunDsLoop(controller, DuoController_SendReportDs_Dynamic);
 	else
 		RunXboxLoop(controller, DuoController_SendReport_Dynamic);
 

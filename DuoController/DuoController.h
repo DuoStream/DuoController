@@ -32,9 +32,9 @@ typedef enum _DUO_CONTROLLER_TYPE
 	DuoControllerTypeXbox = 0,
 
 	/// <summary>
-	/// Virtual DualShock 4 controller (uses DuoController driver).
+	/// Virtual DualSense controller (uses DuoController driver).
 	/// </summary>
-	DuoControllerTypeDs4 = 1,
+	DuoControllerTypeDs = 1,
 } DUO_CONTROLLER_TYPE;
 
 /// <summary>
@@ -47,6 +47,18 @@ typedef enum _SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAGS
 	SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_RIGHT_TRIGGER_VALID = 0x4,
 	SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_LEFT_TRIGGER_VALID = 0x8,
 } SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAGS;
+
+/// <summary>
+/// The power state of the DualSense controller's battery.
+/// </summary>
+typedef enum _POWER_STATE {
+	Discharging = 0x00, // Use PowerPercent
+	Charging = 0x01, // Use PowerPercent
+	Complete = 0x02, // PowerPercent not valid? assume 100%?
+	AbnormalVoltage = 0x0A, // PowerPercent not valid?
+	AbnormalTemperature = 0x0B, // PowerPercent not valid?
+	ChargingError = 0x0F  // PowerPercent not valid?
+} POWER_STATE;
 
 #pragma pack(push, 1)
 
@@ -85,50 +97,111 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT
 } DUO_CONTROLLER_INPUT_REPORT;
 
 /// <summary>
-/// The DualShock 4 controller input report structure.
+/// Touch finger data for a single touch point. Bit-packed per DualSense wire format (4 bytes).
 /// </summary>
-typedef struct _DUO_CONTROLLER_INPUT_REPORT_DS4
+typedef struct _DS_TOUCH_FINGER_DATA
+{
+	UINT32 Index : 7;
+	UINT32 NotTouching : 1;
+	UINT32 FingerX : 12;
+	UINT32 FingerY : 12;
+} DS_TOUCH_FINGER_DATA;
+
+/// <summary>
+/// Touch data block from DualSense input report (9 bytes = 2 finger records + timestamp).
+/// </summary>
+typedef struct _DS_TOUCH_DATA
+{
+	DS_TOUCH_FINGER_DATA Finger[2];
+	UINT8 Timestamp;
+} DS_TOUCH_DATA;
+
+/// <summary>
+/// DualSense USB Get Controller State input report (63 bytes, after Report ID 0x01).
+/// Matches the USBGetStateData structure from the Game Controller Collective Wiki.
+/// Includes DualSense Edge paddle/function buttons.
+/// </summary>
+typedef struct _DUO_CONTROLLER_INPUT_REPORT_DS
 {
 	UINT8 LeftStickX;
 	UINT8 LeftStickY;
 	UINT8 RightStickX;
 	UINT8 RightStickY;
+	UINT8 TriggerLeft;
+	UINT8 TriggerRight;
+	UINT8 SeqNo;
 
-	UINT8 LeftTrigger;
-	UINT8 RightTrigger;
+	UINT8 DPad : 4;
+	UINT8 ButtonSquare : 1;
+	UINT8 ButtonCross : 1;
+	UINT8 ButtonCircle : 1;
+	UINT8 ButtonTriangle : 1;
 
-	UINT8 Hat; // 0 = Up, 1 = Up-Right, 2 = Right, 3 = Down-Right, 4 = Down, 5 = Down-Left, 6 = Left, 7 = Up-Left, 8 = Neutral
+	UINT8 ButtonL1 : 1;
+	UINT8 ButtonR1 : 1;
+	UINT8 ButtonL2 : 1;
+	UINT8 ButtonR2 : 1;
+	UINT8 ButtonCreate : 1;
+	UINT8 ButtonOptions : 1;
+	UINT8 ButtonL3 : 1;
+	UINT8 ButtonR3 : 1;
 
-	UINT8 Square : 1;
-	UINT8 Cross : 1;
-	UINT8 Circle : 1;
-	UINT8 Triangle : 1;
-	UINT8 L1 : 1;
-	UINT8 R1 : 1;
-	UINT8 L2 : 1;
-	UINT8 R2 : 1;
-	UINT8 Share : 1;
-	UINT8 Options : 1;
-	UINT8 L3 : 1;
-	UINT8 R3 : 1;
-	UINT8 PS : 1;
-	UINT8 Touchpad : 1;
+	UINT8 ButtonHome : 1;
+	UINT8 ButtonPad : 1;
+	UINT8 ButtonMute : 1;
+	UINT8 Reserved1 : 1;
+	UINT8 ButtonLeftFunction : 1;
+	UINT8 ButtonRightFunction : 1;
+	UINT8 ButtonLeftPaddle : 1;
+	UINT8 ButtonRightPaddle : 1;
 
-	INT16 GyroX;
-	INT16 GyroY;
-	INT16 GyroZ;
+	UINT8 Reserved2;
+	UINT32 ReservedCounter;
 
-	INT16 AccelX;
-	INT16 AccelY;
-	INT16 AccelZ;
+	INT16 AngularVelocityX;
+	INT16 AngularVelocityZ;
+	INT16 AngularVelocityY;
 
-	UINT8 Touch1Active;
-	USHORT Touch1X;
-	USHORT Touch1Y;
-	UINT8 Touch2Active;
-	USHORT Touch2X;
-	USHORT Touch2Y;
-} DUO_CONTROLLER_INPUT_REPORT_DS4;
+	INT16 AccelerometerX;
+	INT16 AccelerometerY;
+	INT16 AccelerometerZ;
+
+	UINT32 SensorTimestamp;
+	INT8 Temperature;
+
+	DS_TOUCH_DATA TouchData;
+
+	UINT8 TriggerRightStopLocation : 4;
+	UINT8 TriggerRightStatus : 4;
+
+	UINT8 TriggerLeftStopLocation : 4;
+	UINT8 TriggerLeftStatus : 4;
+
+	UINT32 HostTimestamp;
+
+	UINT8 TriggerRightEffect : 4;
+	UINT8 TriggerLeftEffect : 4;
+
+	UINT32 DeviceTimeStamp;
+
+	UINT8 PowerPercent : 4;
+	UINT8 PowerState : 4;
+
+	UINT8 PluggedHeadphones : 1;
+	UINT8 PluggedMic : 1;
+	UINT8 MicMuted : 1;
+	UINT8 PluggedUsbData : 1;
+	UINT8 PluggedUsbPower : 1;
+	UINT8 UsbPowerOnBT : 1;
+	UINT8 DockDetect : 1;
+	UINT8 PluggedUnk : 1;
+
+	UINT8 PluggedExternalMic : 1;
+	UINT8 HapticLowPassFilter : 1;
+	UINT8 Reserved3 : 6;
+
+	UINT8 AesCmac[8];
+} DUO_CONTROLLER_INPUT_REPORT_DS;
 
 /// <summary>
 /// The controller force feedback report structure.
@@ -195,9 +268,9 @@ HRESULT WINAPI DuoController_RemoveController(void* controller);
 HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_REPORT* inputReport);
 
 /// <summary>
-/// Sends a DualShock 4 input report to the given Duo controller.
+/// Sends a DualSense input report to the given Duo controller.
 /// </summary>
 /// <param name="controller">The controller to send the input report to</param>
-/// <param name="inputReport">The DS4 input report to send</param>
+/// <param name="inputReport">The DualSense input report to send</param>
 /// <returns>Result</returns>
-HRESULT WINAPI DuoController_SendReportDs4(void* controller, DUO_CONTROLLER_INPUT_REPORT_DS4* inputReport);
+HRESULT WINAPI DuoController_SendReportDs(void* controller, DUO_CONTROLLER_INPUT_REPORT_DS* inputReport);
