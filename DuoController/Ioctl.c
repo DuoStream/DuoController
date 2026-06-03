@@ -289,6 +289,65 @@ NTSTATUS RequestGetHidXferPacket_ToWriteToDevice(_In_ WDFREQUEST Request, _Out_ 
 	return status;
 }
 
+// Feature Report 5 (0x05) - IMU calibration data
+static const DS_FEATURE_IN_IMU_CALIBRATION G_DsFeatureInImuCalibration =
+{
+	.ReportID = DS_IMU_CALIBRATION_REPORT_ID,
+	.GyroPitchBias = 4, // -8 on Otakian's controller, 4 on mine.
+	.GyroYawBias = -2, // 5 on Otakian's controller, -2 on mine.
+	.GyroRollBias = 2, // -3 on Otakian's controller, 2 on mine.
+	.GyroPitchPlus = 8805, // 8823 on Otakian's controller, 8805 on mine.
+	.GyroPitchMinus = -8803, // -8860 on Otakian's controller, -8803 on mine.
+	.GyroYawPlus = 8856, // 8856 on both controllers.
+	.GyroYawMinus = -8854, // -8848 on Otakian's controller, -8854 on mine.
+	.GyroRollPlus = 8985, // 8883 on Otakian's controller, 8985 on mine.
+	.GyroRollMinus = -8987, // -8881 on Otakian's controller, -8987 on mine.
+	.GyroSpeedPlus = 540, // 540 on both controllers.
+	.GyroSpeedMinus = 540, // 540 on both controllers.
+	.AccelXPlus = 8412, // 8152 on Otakian's controller, 8412 on mine.
+	.AccelXMinus = -7965, // -8254 on Otakian's controller, -7965 on mine.
+	.AccelYPlus = 8084, // 7905 on Otakian's controller, 8084 on mine.
+	.AccelYMinus = -8292, // -8506 on Otakian's controller, -8292 on mine.
+	.AccelZPlus = 8168, // 8192 on Otakian's controller, 8168 on mine.
+	.AccelZMinus = -8196, // -8204 on Otakian's controller, -8196 on mine.
+	.Unknown = 5, // 2 on Otakian's controller, 5 on mine.
+	.Padding = { 0, 0, 0 }
+};
+
+// Feature Report 9 (0x09) - Get Controller and Host MAC
+static const DS_FEATURE_IN_BT_PAIRING_DATA G_DsFeatureInBtPairingData =
+{
+	.ReportID = DS_BT_PAIRING_DATA_REPORT_ID,
+	.ClientMac = { 0x43, 0x7F, 0xF0, 0x49, 0x18, 0x10 },
+	.Hard08 = 0x08,
+	.Hard25 = 0x25,
+	.Hard00 = 0x00,
+	.HostMac = { 0xDD, 0xB8, 0x90, 0x5D, 0xD5, 0xE0 },
+	.Padding = { 0x00, 0x00, 0x00, 0x00 }
+};
+
+// Feature Report 32 (0x20) - Get Controller Firmware Version
+static const DS_FEATURE_IN_FW_VERSION G_DsFeatureInFwVersion =
+{
+	.ReportID = DS_FIRMWARE_VERSION_REPORT_ID,
+	//.BuildDate = "Jul  4 2025",
+	.BuildDate = { 'J', 'u', 'l', ' ', ' ', '4', ' ', '2', '0', '2', '5' },
+	//.BuildTime = "10:10:32",
+	.BuildTime = { '1', '0', ':', '1', '0', ':', '3', '2' },
+	.FwType = 2,
+	.SwSeries = 4,
+	.HardwareInfo = 0x00000621, // Generation 0x06, Variation 0x21
+	.FirmwareVersion = 0x0110002a, // 1.16.42
+	.DeviceInfo = { 0x1, 0xa8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 },
+	.UpdateVersion = 0x0630,
+	.UpdateImageInfo = 0x0,
+	.UpdateUnk = 0x0,
+	.FwVersion1 = 0x0001003c, // 1.0.60
+	.FwVersion2 = 0x0002000a, // 2.0.10
+	.FwVersion3 = 0x00000006, // 0.0.6
+	.Unknown = 0x0
+};
+
 /// <summary>
 /// Handles IOCTL_HID_GET_FEATURE for the HID collection.
 /// </summary>
@@ -334,16 +393,54 @@ NTSTATUS GetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 		return status;
 	}
 
-	// For DualSense feature reports, return zero-filled buffer for all report IDs.
-	// Real hardware returns calibration data; for a virtual device this is sufficient.
 	UNREFERENCED_PARAMETER(QueueContext);
 
 	if (packet.reportBufferLen > 0)
 	{
 		RtlZeroMemory(packet.reportBuffer, packet.reportBufferLen);
-		if (packet.reportBufferLen >= sizeof(UCHAR))
+
+		switch (packet.reportId)
 		{
-			packet.reportBuffer[0] = (UCHAR)packet.reportId;
+		case DS_IMU_CALIBRATION_REPORT_ID:
+			if (packet.reportBufferLen >= sizeof(G_DsFeatureInImuCalibration))
+			{
+				RtlCopyMemory(packet.reportBuffer, &G_DsFeatureInImuCalibration, sizeof(G_DsFeatureInImuCalibration));
+			}
+			else
+			{
+				status = STATUS_BUFFER_TOO_SMALL;
+			}
+			break;
+
+		case DS_BT_PAIRING_DATA_REPORT_ID:
+			if (packet.reportBufferLen >= sizeof(G_DsFeatureInBtPairingData))
+			{
+				RtlCopyMemory(packet.reportBuffer, &G_DsFeatureInBtPairingData, sizeof(G_DsFeatureInBtPairingData));
+			}
+			else
+			{
+				status = STATUS_BUFFER_TOO_SMALL;
+			}
+			break;
+
+		case DS_FIRMWARE_VERSION_REPORT_ID:
+			if (packet.reportBufferLen >= sizeof(G_DsFeatureInFwVersion))
+			{
+				RtlCopyMemory(packet.reportBuffer, &G_DsFeatureInFwVersion, sizeof(G_DsFeatureInFwVersion));
+			}
+			else
+			{
+				status = STATUS_BUFFER_TOO_SMALL;
+			}
+			break;
+
+		default:
+			// For all other report IDs, just set the report ID byte (zero-filled above)
+			if (packet.reportBufferLen >= sizeof(UCHAR))
+			{
+				packet.reportBuffer[0] = (UCHAR)packet.reportId;
+			}
+			break;
 		}
 	}
 
@@ -552,17 +649,20 @@ NTSTATUS GetIndexedString(_In_ WDFREQUEST Request)
 
 	if (NT_SUCCESS(status))
 	{
-
-		if (stringIndex != HID_DEVICE_STRING_INDEX)
+		switch (stringIndex)
 		{
+		case HID_DEVICE_MANUFACTURER_STRING_INDEX:
+			status = RequestCopyFromBuffer(Request, HID_DEVICE_MANUFACTURER_STRING, sizeof(HID_DEVICE_MANUFACTURER_STRING));
+			break;
+		case HID_DEVICE_PRODUCT_STRING_INDEX:
+			status = RequestCopyFromBuffer(Request, HID_DEVICE_PRODUCT_STRING, sizeof(HID_DEVICE_PRODUCT_STRING));
+			break;
+		default:
 			status = STATUS_INVALID_PARAMETER;
-			TraceEvents(TRACE_LEVEL_ERROR, TRACE_IOCTL, 
-				"GetString: unknown string index %d\n", 
+			TraceEvents(TRACE_LEVEL_ERROR, TRACE_IOCTL,
+				"GetString: unknown string index %d\n",
 				stringIndex);
-			return status;
 		}
-
-		status = RequestCopyFromBuffer(Request, HID_DEVICE_STRING, sizeof(HID_DEVICE_STRING));
 	}
 	return status;
 }

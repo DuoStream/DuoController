@@ -40,6 +40,9 @@ typedef struct _MESSAGE_HEADER
 #define DS_INPUT_REPORT_ID 0x01
 #define DS_OUTPUT_REPORT_ID 0x02
 #define DS_OUTPUT_REPORT_SIZE 47
+#define DS_IMU_CALIBRATION_REPORT_ID 0x05
+#define DS_BT_PAIRING_DATA_REPORT_ID 0x09
+#define DS_FIRMWARE_VERSION_REPORT_ID 0x20
 
 // DS button indices for the flags field (0-based)
 #define DS_BUTTON_SQUARE    0
@@ -85,6 +88,67 @@ typedef struct _DS_OUTPUT_REPORT
 	UCHAR Data[46];
 
 } DS_OUTPUT_REPORT, *PDS_OUTPUT_REPORT;
+
+typedef struct _DS_FEATURE_IN_IMU_CALIBRATION {
+	UINT8 ReportID; // 0x05
+	INT16 GyroPitchBias;
+	INT16 GyroYawBias;
+	INT16 GyroRollBias;
+	INT16 GyroPitchPlus;
+	INT16 GyroPitchMinus;
+	INT16 GyroYawPlus;
+	INT16 GyroYawMinus;
+	INT16 GyroRollPlus;
+	INT16 GyroRollMinus;
+	INT16 GyroSpeedPlus;
+	INT16 GyroSpeedMinus;
+	INT16 AccelXPlus;
+	INT16 AccelXMinus;
+	INT16 AccelYPlus;
+	INT16 AccelYMinus;
+	INT16 AccelZPlus;
+	INT16 AccelZMinus;
+	INT16 Unknown;
+	UINT8 Padding[3];
+} DS_FEATURE_IN_IMU_CALIBRATION, *PDS_FEATURE_IN_IMU_CALIBRATION;
+
+typedef struct _DS_FEATURE_IN_BT_PAIRING_DATA {
+	UINT8 ReportID; // 0x09
+	UINT8 ClientMac[6]; // Right to Left
+	UINT8 Hard08;
+	UINT8 Hard25;
+	UINT8 Hard00;
+	UINT8 HostMac[6]; // Right to Left
+	UINT8 Padding[4]; // Size according to Linux driver
+} DS_FEATURE_IN_BT_PAIRING_DATA, *PDS_FEATURE_IN_BT_PAIRING_DATA;
+
+typedef struct _DS_FEATURE_IN_FW_VERSION {
+	UINT8 ReportID; // 0x20
+	char BuildDate[11]; // string
+	char BuildTime[8]; // string
+	UINT16 FwType;
+	UINT16 SwSeries;
+	UINT32 HardwareInfo; // 0x00FF0000 - Variation
+	// 0x0000FF00 - Generation
+	// 0x0000003F - Trial?
+	// ^ Values tied to enumerations
+	UINT32 FirmwareVersion; // 0xAABBCCCC AA.BB.CCCC
+	char DeviceInfo[12];
+	////
+	UINT16 UpdateVersion;
+	char UpdateImageInfo;
+	char UpdateUnk;
+	////
+	UINT32 FwVersion1; // AKA SblFwVersion
+	// 0xAABBCCCC AA.BB.CCCC
+	// Ignored for FwType 0
+	// HardwareVersion used for FwType 1
+	// Unknown behavior if HardwareVersion < 0.1.38 for FwType 2 & 3
+	// If HardwareVersion >= 0.1.38 for FwType 2 & 3
+	UINT32 FwVersion2; // AKA VenomFwVersion
+	UINT32 FwVersion3; // AKA SpiderDspFwVersion AKA BettyFwVer
+	UINT32 Unknown; // May be Memory Control Unit for Non Volatile Storage
+} DS_FEATURE_IN_FW_VERSION, *PDS_FEATURE_IN_FW_VERSION;
 
 #include <poppack.h>
 

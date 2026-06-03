@@ -185,8 +185,8 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT_DS
 	UINT32 ReservedCounter;
 
 	INT16 AngularVelocityX;
-	INT16 AngularVelocityZ;
 	INT16 AngularVelocityY;
+	INT16 AngularVelocityZ;
 
 	INT16 AccelerometerX;
 	INT16 AccelerometerY;
