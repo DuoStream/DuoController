@@ -904,47 +904,61 @@ static HRESULT DsConnectInput(DUO_CONTROLLER* controller)
 /// <returns>Thread exit code</returns>
 static DWORD WINAPI DsFfbThreadProc(LPVOID param)
 {
+	// Cast the controller pointer
 	DUO_CONTROLLER* controller = (DUO_CONTROLLER*)param;
 
+	// Build a wait handle array for the stop event and the output event
 	HANDLE waitHandles[2] = { controller->DsFfbStopEvent, controller->DsOutputEvent };
 
 	while (1)
 	{
+		// Wait for either the stop event or the output event to be signaled
 		DWORD wr = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+
+		// The stop event was signaled
 		if (wr == WAIT_OBJECT_0)
 		{
-			// Stop event was signaled
 			break;
 		}
 
+		// The output event was signaled
 		if (wr == WAIT_OBJECT_0 + 1)
 		{
-			// Output event was signaled — new FFB data available
+			// Cast the shared memory to the output report structure
+			DUO_CONTROLLER_OUTPUT_REPORT_DS* outputMem = (DUO_CONTROLLER_OUTPUT_REPORT_DS*)controller->DsOutputView;
 
-			// Read the output report from shared memory
-			BYTE* outputMem = (BYTE*)controller->DsOutputView;
-
-			// Decode the DualSense output report into a force feedback report
-			// DualSense output report (Report ID 0x02): Byte 0 = ReportId,
-			// Byte 3 = RumbleEmulationRight, Byte 4 = RumbleEmulationLeft
-			DUO_CONTROLLER_FORCE_FEEDBACK_REPORT ffReport;
-			ZeroMemory(&ffReport, sizeof(ffReport));
-
-			ffReport.Flags = SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_RIGHT_MOTOR_VALID |
-				SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_LEFT_MOTOR_VALID;
-			ffReport.RightMotor = outputMem[3];
-			ffReport.LeftMotor = outputMem[4];
-
-#pragma warning(suppress:4366)
-			EnterCriticalSection(&controller->DsCs);
-			DuoController_VibrationReportCallback_t callback = controller->VibrationReportCallback;
-			void* context = controller->VibrationReportCallbackContext;
-#pragma warning(suppress:4366)
-			LeaveCriticalSection(&controller->DsCs);
-
-			if (callback != NULL)
+			// Verify we've actually received an output report
+			if (outputMem->ReportId == DS_OUTPUT_REPORT_ID)
 			{
-				callback(controller, &ffReport, context);
+				// Convert the DualSense output report into a regular force feedback report
+				DUO_CONTROLLER_FORCE_FEEDBACK_REPORT ffReport;
+				ZeroMemory(&ffReport, sizeof(ffReport));
+
+				// Always pretend the motor values are valid
+				ffReport.Flags = SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_RIGHT_MOTOR_VALID | SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_LEFT_MOTOR_VALID;
+
+				// If UseRumbleNotHaptics is set, the RumbleEmulationRight and RumbleEmulationLeft fields are populated with emulated rumble values
+				if (outputMem->UseRumbleNotHaptics)
+				{
+					// Use the emulated rumble values (should we scale them from 127 to 255 to unify the ranges?)
+					ffReport.RightMotor = outputMem->RumbleEmulationRight;
+					ffReport.LeftMotor = outputMem->RumbleEmulationLeft;
+				}
+
+				// Grab the callback and context under the critical section
+#pragma warning(suppress:4366)
+				EnterCriticalSection(&controller->DsCs);
+				DuoController_VibrationReportCallback_t callback = controller->VibrationReportCallback;
+				void* context = controller->VibrationReportCallbackContext;
+#pragma warning(suppress:4366)
+				LeaveCriticalSection(&controller->DsCs);
+
+				// We've got a callback to call into
+				if (callback != NULL)
+				{
+					// Forward the force feedback report to the registered callback
+					callback(controller, &ffReport, context);
+				}
 			}
 		}
 	}
@@ -1239,6 +1253,9 @@ static HRESULT SendDsReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REP
 {
 #pragma warning(suppress:4366)
 	EnterCriticalSection(&controller->DsCs);
+	inputReport->SeqNo++;
+	inputReport->DeviceTimeStamp = GetTickCount();
+	inputReport->SensorTimestamp = inputReport->DeviceTimeStamp;
 	HRESULT result = DsSendRawInput(controller, inputReport);
 	if (SUCCEEDED(result))
 	{
