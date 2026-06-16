@@ -11,7 +11,7 @@
 
 ## Overview
 
-**DuoController** is a pure userspace virtual gamepad library and UMDF driver for Windows that emulates **DualSense Edge** and **Xbox One** controllers entirely from user mode.
+**DuoController** is a driver for Windows that emulates **DualSense Edge** and **Xbox Elite** controllers.
 
 It is a spiritual successor to [ViGEmBus](https://github.com/ViGEm/ViGEmBus), the now-abandoned KMDF-based kernel driver, reimagined using Microsoft's **User-Mode Driver Framework (UMDF)**.
 
@@ -47,7 +47,7 @@ This makes DuoController dramatically more accessible to:
 ## Features
 
 - **Full DualSense Edge Controller Emulation** - Via HID minidriver
-- **Full Xbox One Controller Emulation** - Via `xboxgipsynthetic.dll`
+- **Full Xbox Elite Controller Emulation** - Via `xboxgipsynthetic.dll`
 - **Session Isolation** - Isolates gamepads to the current session ID for multi-session and RDP environments
 - **Minimal Footprint** - A single DLL/INF pair, no kernel components
 
@@ -85,10 +85,10 @@ HRESULT DuoController_CreateController(
     void** controller
 );
 
-// Send Xbox One input report
+// Send Xbox Elite input report
 HRESULT DuoController_SendReport(
     void* controller,
-    DUO_CONTROLLER_INPUT_REPORT* inputReport
+    DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED* inputReport
 );
 
 // Send DualSense Edge input report

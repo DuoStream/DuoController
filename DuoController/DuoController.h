@@ -34,7 +34,7 @@ typedef enum _DUO_CONTROLLER_TYPE
 	/// <summary>
 	/// Virtual DualSense controller (uses DuoController driver).
 	/// </summary>
-	DuoControllerTypeDs = 1,
+	DuoControllerTypeDs = 1
 } DUO_CONTROLLER_TYPE;
 
 /// <summary>
@@ -91,9 +91,9 @@ typedef enum _LIGHT_BRIGHTNESS {
 #pragma pack(push, 1)
 
 /// <summary>
-/// The Xbox controller input report structure.
+/// The default Xbox controller input report structure.
 /// </summary>
-typedef struct _DUO_CONTROLLER_INPUT_REPORT
+typedef struct _DUO_CONTROLLER_INPUT_REPORT_XBOX
 {
 	UINT8 Sync : 1; // Unused
 	UINT8 Guide : 1;
@@ -122,7 +122,23 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT
 	INT16 LeftStickVertical;   // -32768 (down) to 32767 (up)
 	INT16 RightStickHorizontal; // -32768 (left) to 32767 (right)
 	INT16 RightStickVertical;   // -32768 (down) to 32767 (up)
-} DUO_CONTROLLER_INPUT_REPORT;
+} DUO_CONTROLLER_INPUT_REPORT_XBOX;
+
+/// <summary>
+/// The extended Xbox controller input report structure.
+/// </summary>
+typedef struct _DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED
+{
+	DUO_CONTROLLER_INPUT_REPORT_XBOX BaseReport;
+
+	UINT8 Paddle1 : 1;
+	UINT8 Paddle2 : 1;
+	UINT8 Paddle3 : 1;
+	UINT8 Paddle4 : 1;
+	UINT8 : 4;
+
+	UINT8 Reserved[20];
+} DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED;
 
 /// <summary>
 /// DualSense touch finger data.
@@ -416,7 +432,7 @@ HRESULT WINAPI DuoController_RemoveController(void* controller);
 /// <param name="controller">The controller to send the input report to</param>
 /// <param name="inputReport">The input report to send</param>
 /// <returns>Result</returns>
-HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_REPORT* inputReport);
+HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED* inputReport);
 
 /// <summary>
 /// Sends a DualSense input report to the given Duo controller.

@@ -41,19 +41,50 @@
 #define NO_PROCESS 0x100000000000000
 
 /// <summary>
+/// Controller types supported by xboxgipsynthetic.dll.
+/// </summary>
+typedef enum _SYNTHETIC_CONTROLLER_TYPE
+{
+	/// <summary>
+	/// A regular Xbox gamepad.
+	/// </summary>
+	SyntheticControllerTypeGamepad = 0,
+
+	/// <summary>
+	/// A remote Xbox gamepad that streams GIP packets to the synthetic controller.
+	/// </summary>
+	SyntheticControllerTypeGipStreamGamepad = 1,
+
+	/// <summary>
+	/// An extended Xbox gamepad with 4 additional paddle buttons.
+	/// </summary>
+	SyntheticControllerTypeExtendedGamepad = 2
+} SYNTHETIC_CONTROLLER_TYPE;
+
+/// <summary>
 /// The supported synthetic controller input report types.
 /// </summary>
 typedef enum _SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE
 {
 	/// <summary>
-	/// The controller input report which contains all of its regular buttons, axes and triggers.
+	/// The default Xbox controller input report containing all of its regular buttons, axes and triggers, minus Elite paddles.
 	/// </summary>
 	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_CONTROLLER = 0,
 
 	/// <summary>
 	/// The virtual key input report which contains the Guide button state.
 	/// </summary>
-	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_VKEY = 1
+	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_VKEY = 1,
+
+	/// <summary>
+	/// A raw stream of GIP packets.
+	/// </summary>
+	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_GIP_STREAM = 2,
+
+	/// <summary>
+	/// The extended Xbox controller input report containing all of its regular buttons, axes and triggers, including Elite paddles.
+	/// </summary>
+	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_EXTENDED_CONTROLLER = 3
 } SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE;
 
 /// <summary>
@@ -91,7 +122,7 @@ typedef struct _DUO_CONTROLLER
 	// Xbox-specific fields
 	void* SyntheticHandle;
 	HDEVQUERY DeviceQuery;
-	DUO_CONTROLLER_INPUT_REPORT LastXboxInputReport;
+	DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED LastXboxInputReport;
 
 	// DS-specific fields
 	WCHAR DsInstanceId[256];
@@ -145,7 +176,7 @@ typedef void(WINAPI *SyntheticController_ReportCallback_t)(void* controller, uns
 /// <param name="controllerType">Controller type</param>
 /// <param name="controller">Receives the created controller</param>
 /// <returns>Result</returns>
-typedef HRESULT(WINAPI *SyntheticController_CreateController_t)(unsigned long controllerType, void** controller);
+typedef HRESULT(WINAPI *SyntheticController_CreateController_t)(SYNTHETIC_CONTROLLER_TYPE controllerType, void** controller);
 
 /// <summary>
 /// Sets the target process for the given synthetic controller.
@@ -1479,7 +1510,7 @@ HRESULT WINAPI DuoController_CreateController(DUO_CONTROLLER_TYPE controllerType
 
 					// Create the synthetic controller
 #pragma warning(suppress:4366)
-					if ((result = SyntheticController_CreateController(0, &newController->SyntheticHandle)) == S_OK)
+					if ((result = SyntheticController_CreateController(SyntheticControllerTypeExtendedGamepad, &newController->SyntheticHandle)) == S_OK)
 					{
 						// The device ID
 						unsigned long long deviceId = 0;
@@ -1793,7 +1824,7 @@ HRESULT WINAPI DuoController_RemoveController(void* controller)
 /// <param name="controller">The controller to send the input report to</param>
 /// <param name="inputReport">The input report to send</param>
 /// <returns>Result</returns>
-HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_REPORT* inputReport)
+HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED* inputReport)
 {
 	// The result
 	HRESULT result = S_OK;
@@ -1814,7 +1845,7 @@ HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_R
 			if (duoController->Type == DuoControllerTypeXbox)
 			{
 				// Send the input report
-				if ((result = SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_CONTROLLER, inputReport, sizeof(DUO_CONTROLLER_INPUT_REPORT))) == S_OK)
+				if ((result = SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_EXTENDED_CONTROLLER, inputReport, sizeof(DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED))) == S_OK)
 				{
 					// Create a VKEY input report for the Guide button
 					SYNTHETIC_CONTROLLER_VKEY_INPUT_REPORT guideButtonInputReport;
@@ -1823,7 +1854,7 @@ HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_R
 					memset(&guideButtonInputReport, 0, sizeof(guideButtonInputReport));
 
 					// Set the Guide button state
-					guideButtonInputReport.State = inputReport->Guide;
+					guideButtonInputReport.State = inputReport->BaseReport.Guide;
 
 					// Send the VKEY input report for the Guide button (not mission critical)
 					SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_VKEY, &guideButtonInputReport, sizeof(guideButtonInputReport));

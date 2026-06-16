@@ -6,7 +6,7 @@ typedef HRESULT (*DuoController_Initialize_t)();
 typedef HRESULT (*DuoController_Uninitialize_t)();
 typedef HRESULT(*DuoController_CreateController_t)(DUO_CONTROLLER_TYPE controllerType, DuoController_VibrationReportCallback_t vibrationCallback, void* vibrationCallbackContext, void** controller);
 typedef HRESULT(*DuoController_RemoveController_t)(void* controller);
-typedef HRESULT(*DuoController_SendReport_t)(void* controller, DUO_CONTROLLER_INPUT_REPORT* inputReport);
+typedef HRESULT(*DuoController_SendReport_t)(void* controller, DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED* inputReport);
 typedef HRESULT(*DuoController_SendReportDs_t)(void* controller, DUO_CONTROLLER_INPUT_REPORT_DS* inputReport);
 
 typedef enum _SAMPLE_CONTROLLER_TYPE
@@ -33,7 +33,7 @@ void VibrationReportCallback(void* controller, DUO_CONTROLLER_FORCE_FEEDBACK_REP
 /// </summary>
 static void RunXboxLoop(void* controller, DuoController_SendReport_t sendReport)
 {
-	DUO_CONTROLLER_INPUT_REPORT inputReport;
+	DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED inputReport;
 	memset(&inputReport, 0, sizeof(inputReport));
 	char lineBuffer[128];
 
@@ -58,28 +58,32 @@ static void RunXboxLoop(void* controller, DuoController_SendReport_t sendReport)
 			continue;
 		}
 
-		if (strcmp(buttonName, "Sync") == 0)               inputReport.Sync = buttonState;
-		else if (strcmp(buttonName, "Guide") == 0)          inputReport.Guide = buttonState;
-		else if (strcmp(buttonName, "Start") == 0)          inputReport.Start = buttonState;
-		else if (strcmp(buttonName, "Back") == 0)           inputReport.Back = buttonState;
-		else if (strcmp(buttonName, "A") == 0)              inputReport.A = buttonState;
-		else if (strcmp(buttonName, "B") == 0)              inputReport.B = buttonState;
-		else if (strcmp(buttonName, "X") == 0)              inputReport.X = buttonState;
-		else if (strcmp(buttonName, "Y") == 0)              inputReport.Y = buttonState;
-		else if (strcmp(buttonName, "DPadUp") == 0)         inputReport.DPadUp = buttonState;
-		else if (strcmp(buttonName, "DPadDown") == 0)       inputReport.DPadDown = buttonState;
-		else if (strcmp(buttonName, "DPadLeft") == 0)       inputReport.DPadLeft = buttonState;
-		else if (strcmp(buttonName, "DPadRight") == 0)      inputReport.DPadRight = buttonState;
-		else if (strcmp(buttonName, "LeftBumper") == 0)     inputReport.LeftBumper = buttonState;
-		else if (strcmp(buttonName, "RightBumper") == 0)    inputReport.RightBumper = buttonState;
-		else if (strcmp(buttonName, "LeftStick") == 0)      inputReport.LeftStick = buttonState;
-		else if (strcmp(buttonName, "RightStick") == 0)     inputReport.RightStick = buttonState;
-		else if (strcmp(buttonName, "LeftTrigger") == 0)    inputReport.LeftTrigger = (BYTE)buttonState;
-		else if (strcmp(buttonName, "RightTrigger") == 0)   inputReport.RightTrigger = (BYTE)buttonState;
-		else if (strcmp(buttonName, "LeftStickHorizontal") == 0)  inputReport.LeftStickHorizontal = (SHORT)buttonState;
-		else if (strcmp(buttonName, "LeftStickVertical") == 0)    inputReport.LeftStickVertical = (SHORT)buttonState;
-		else if (strcmp(buttonName, "RightStickHorizontal") == 0) inputReport.RightStickHorizontal = (SHORT)buttonState;
-		else if (strcmp(buttonName, "RightStickVertical") == 0)   inputReport.RightStickVertical = (SHORT)buttonState;
+		if (strcmp(buttonName, "Sync") == 0)               inputReport.BaseReport.Sync = buttonState;
+		else if (strcmp(buttonName, "Guide") == 0)          inputReport.BaseReport.Guide = buttonState;
+		else if (strcmp(buttonName, "Start") == 0)          inputReport.BaseReport.Start = buttonState;
+		else if (strcmp(buttonName, "Back") == 0)           inputReport.BaseReport.Back = buttonState;
+		else if (strcmp(buttonName, "A") == 0)              inputReport.BaseReport.A = buttonState;
+		else if (strcmp(buttonName, "B") == 0)              inputReport.BaseReport.B = buttonState;
+		else if (strcmp(buttonName, "X") == 0)              inputReport.BaseReport.X = buttonState;
+		else if (strcmp(buttonName, "Y") == 0)              inputReport.BaseReport.Y = buttonState;
+		else if (strcmp(buttonName, "DPadUp") == 0)         inputReport.BaseReport.DPadUp = buttonState;
+		else if (strcmp(buttonName, "DPadDown") == 0)       inputReport.BaseReport.DPadDown = buttonState;
+		else if (strcmp(buttonName, "DPadLeft") == 0)       inputReport.BaseReport.DPadLeft = buttonState;
+		else if (strcmp(buttonName, "DPadRight") == 0)      inputReport.BaseReport.DPadRight = buttonState;
+		else if (strcmp(buttonName, "LeftBumper") == 0)     inputReport.BaseReport.LeftBumper = buttonState;
+		else if (strcmp(buttonName, "RightBumper") == 0)    inputReport.BaseReport.RightBumper = buttonState;
+		else if (strcmp(buttonName, "LeftStick") == 0)      inputReport.BaseReport.LeftStick = buttonState;
+		else if (strcmp(buttonName, "RightStick") == 0)     inputReport.BaseReport.RightStick = buttonState;
+		else if (strcmp(buttonName, "LeftTrigger") == 0)    inputReport.BaseReport.LeftTrigger = (BYTE)buttonState;
+		else if (strcmp(buttonName, "RightTrigger") == 0)   inputReport.BaseReport.RightTrigger = (BYTE)buttonState;
+		else if (strcmp(buttonName, "LeftStickHorizontal") == 0)  inputReport.BaseReport.LeftStickHorizontal = (SHORT)buttonState;
+		else if (strcmp(buttonName, "LeftStickVertical") == 0)    inputReport.BaseReport.LeftStickVertical = (SHORT)buttonState;
+		else if (strcmp(buttonName, "RightStickHorizontal") == 0) inputReport.BaseReport.RightStickHorizontal = (SHORT)buttonState;
+		else if (strcmp(buttonName, "RightStickVertical") == 0)   inputReport.BaseReport.RightStickVertical = (SHORT)buttonState;
+		else if (strcmp(buttonName, "Paddle1") == 0) inputReport.Paddle1 = buttonState;
+		else if (strcmp(buttonName, "Paddle2") == 0) inputReport.Paddle2 = buttonState;
+		else if (strcmp(buttonName, "Paddle3") == 0) inputReport.Paddle3 = buttonState;
+		else if (strcmp(buttonName, "Paddle4") == 0) inputReport.Paddle4 = buttonState;
 		else
 		{
 			wprintf(L"Unknown Xbox field: %s\n", buttonName);
