@@ -26,9 +26,13 @@ DriverVer=
 
 [Standard.NT$ARCH$.10.0...17134]
 %ROOT\VID_054C&PID_0DF2.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_0DF2
+%ROOT\VID_054C&PID_0CE6.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_0CE6
+%ROOT\VID_054C&PID_05C4.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_05C4
 
 [ControlFlags]
 ExcludeFromSelect=ROOT\VID_054C&PID_0DF2
+ExcludeFromSelect=ROOT\VID_054C&PID_0CE6
+ExcludeFromSelect=ROOT\VID_054C&PID_05C4
 
 [ClassInstall32]
 AddReg=DuoControllerClass_RegistryAdd
@@ -105,3 +109,5 @@ ClassName="DuoController Devices"
 DiskName = "DuoController Installation Disk"
 WudfRdDisplayName="DuoController User-mode Driver"
 ROOT\VID_054C&PID_0DF2.DeviceName="DualSense Edge Wireless Controller"
+ROOT\VID_054C&PID_0CE6.DeviceName="DualSense Wireless Controller"
+ROOT\VID_054C&PID_05C4.DeviceName="DualShock 4 Wireless Controller"

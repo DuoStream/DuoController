@@ -15,10 +15,10 @@
 #include "Driver.h"
 #include "SharedMemoryServer.tmh"
 
-// Size of the input shared memory region: header (2) + DualSense report (64)
-#define INPUT_SHM_SIZE (MESSAGE_HEADER_LEN + DS_REPORT_SIZE)
+// Size of the input shared memory region: header (2) + controller report (64)
+#define INPUT_SHM_SIZE (MESSAGE_HEADER_LEN + DS_REPORT_SIZE) // same for DS4
 
-// Size of the output shared memory region: DualSense output report (47)
+// Size of the output shared memory region: max of DS (47) and DS4 (31) output report sizes
 #define OUTPUT_SHM_SIZE DS_OUTPUT_REPORT_SIZE
 
 // Name format strings for shared memory and event objects
@@ -363,9 +363,9 @@ DWORD WINAPI InputSharedMemoryThread(LPVOID Params)
 
 			switch (buffer[0])
 			{
-			case DS_INPUT_REPORT_FULL:
+			case DS_INPUT_REPORT_FULL: // same message type for DS4
 			{
-				if (buffer[1] != DS_REPORT_SIZE)
+				if (buffer[1] != DS_REPORT_SIZE) // DS4_REPORT_SIZE is also 64
 				{
 					TraceEvents(TRACE_LEVEL_ERROR, TRACE_PIPE,
 						"DS_INPUT_REPORT has incorrect size. Expected: %d, Received: %d\n",
@@ -377,7 +377,7 @@ DWORD WINAPI InputSharedMemoryThread(LPVOID Params)
 
 				RtlCopyMemory(queueContext->DeviceContext->DsInputReport,
 					&buffer[MESSAGE_HEADER_LEN],
-					DS_REPORT_SIZE);
+					DS_REPORT_SIZE); // both DS and DS4 use 64-byte reports
 
 				CompleteReadRequest(devContext, DS_INPUT_REPORT_FULL);
 				break;
@@ -397,8 +397,8 @@ DWORD WINAPI InputSharedMemoryThread(LPVOID Params)
 }
 
 /// <summary>
-/// Writes the current output report (e.g., force feedback data) to the shared memory
-/// output view and signals the output event to notify the DuoController library.
+/// Writes the current output report (force feedback data for DS/DS4) to the shared
+/// memory output view and signals the output event to notify the DuoController library.
 /// </summary>
 /// <param name="queueContext">The queue context containing the device context and report data.</param>
 VOID WriteResponseToOutputClient(PQUEUE_CONTEXT queueContext)
@@ -412,13 +412,14 @@ VOID WriteResponseToOutputClient(PQUEUE_CONTEXT queueContext)
 		return;
 	}
 
-	// Copy the output report to shared memory
-	RtlCopyMemory(
-		attr->OutputView,
+	// Copy the output report to shared memory (DS: 47 bytes, DS4: 31 bytes)
+	size_t copySize = queueContext->DeviceContext->ReportPacket.reportBufferLen < OUTPUT_SHM_SIZE
+		? queueContext->DeviceContext->ReportPacket.reportBufferLen
+		: OUTPUT_SHM_SIZE;
+
+	RtlCopyMemory(attr->OutputView,
 		queueContext->DeviceContext->ReportPacket.reportBuffer,
-		queueContext->DeviceContext->ReportPacket.reportBufferLen < OUTPUT_SHM_SIZE
-			? queueContext->DeviceContext->ReportPacket.reportBufferLen
-			: OUTPUT_SHM_SIZE);
+		copySize);
 
 	// Signal the output event to notify DuoController
 	SetEvent(attr->OutputEvent);
@@ -512,9 +513,9 @@ VOID ShutdownSharedMemoryServer(PDEVICE_CONTEXT devContext)
 
 /// <summary>
 /// Retrieves the next pending read request from the manual queue, copies the current
-/// DualSense input report into the request's output buffer, and completes the request.
+/// controller input report into the request's output buffer, and completes the request.
 /// </summary>
-/// <param name="devContext">The device context containing the DualSense input report.</param>
+/// <param name="devContext">The device context containing the input report.</param>
 /// <param name="ReportId">The report type identifier (currently unused).</param>
 VOID CompleteReadRequest(PDEVICE_CONTEXT devContext, UCHAR ReportId)
 {
@@ -560,8 +561,11 @@ VOID CompleteReadRequest(PDEVICE_CONTEXT devContext, UCHAR ReportId)
 
 	if (bytesReturned > 1)
 	{
-		RtlCopyMemory(pReadReport, devContext->DsInputReport,
-			bytesReturned < DS_REPORT_SIZE ? bytesReturned : DS_REPORT_SIZE);
+		UCHAR reportSize = (devContext->ControllerSubType == DuoControllerSubTypeDualShock4)
+		? DS4_REPORT_SIZE : DS_REPORT_SIZE;
+
+	RtlCopyMemory(pReadReport, devContext->DsInputReport,
+		bytesReturned < reportSize ? bytesReturned : reportSize);
 	}
 
 	WdfRequestCompleteWithInformation(reqRead, status, bytesReturned);

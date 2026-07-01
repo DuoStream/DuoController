@@ -28,7 +28,7 @@ NTSTATUS SetOutputReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Reque
 
 NTSTATUS GetString(_In_ WDFREQUEST Request, _In_ PDEVICE_CONTEXT DeviceContext);
 
-NTSTATUS GetIndexedString(_In_ WDFREQUEST Request);
+NTSTATUS GetIndexedString(_In_ WDFREQUEST Request, _In_ PDEVICE_CONTEXT DeviceContext);
 
 NTSTATUS GetStringId(_In_ WDFREQUEST Request, _Out_ ULONG* StringId, _Out_ ULONG* LanguageId);
 

@@ -5,5 +5,4 @@ DuoController_Uninitialize
 DuoController_CreateController
 DuoController_RemoveController
 DuoController_SendReport
-DuoController_SendReportDs
 DriverEntry

@@ -32,9 +32,19 @@ typedef enum _DUO_CONTROLLER_TYPE
 	DuoControllerTypeXbox = 0,
 
 	/// <summary>
-	/// Virtual DualSense controller (uses DuoController driver).
+	/// Virtual DualShock 4 controller.
 	/// </summary>
-	DuoControllerTypeDs = 1
+	DuoControllerTypeDualShock4 = 1,
+
+	/// <summary>
+	/// Virtual DualSense controller.
+	/// </summary>
+	DuoControllerTypeDualSense = 2,
+
+	/// <summary>
+	/// Virtual DualSense Edge controller.
+	/// </summary>
+	DuoControllerTypeDualSenseEdge = 3
 } DUO_CONTROLLER_TYPE;
 
 /// <summary>
@@ -91,7 +101,8 @@ typedef enum _LIGHT_BRIGHTNESS {
 #pragma pack(push, 1)
 
 /// <summary>
-/// The default Xbox controller input report structure.
+/// The Xbox controller input report structure, including Elite paddle buttons.
+/// Works for both regular and paddle-equipped XBOX gamepads.
 /// </summary>
 typedef struct _DUO_CONTROLLER_INPUT_REPORT_XBOX
 {
@@ -122,14 +133,6 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT_XBOX
 	INT16 LeftStickVertical;   // -32768 (down) to 32767 (up)
 	INT16 RightStickHorizontal; // -32768 (left) to 32767 (right)
 	INT16 RightStickVertical;   // -32768 (down) to 32767 (up)
-} DUO_CONTROLLER_INPUT_REPORT_XBOX;
-
-/// <summary>
-/// The extended Xbox controller input report structure.
-/// </summary>
-typedef struct _DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED
-{
-	DUO_CONTROLLER_INPUT_REPORT_XBOX BaseReport;
 
 	UINT8 Paddle1 : 1;
 	UINT8 Paddle2 : 1;
@@ -138,7 +141,7 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED
 	UINT8 : 4;
 
 	UINT8 Reserved[20];
-} DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED;
+} DUO_CONTROLLER_INPUT_REPORT_XBOX;
 
 /// <summary>
 /// DualSense touch finger data.
@@ -161,41 +164,41 @@ typedef struct _DS_TOUCH_DATA
 } DS_TOUCH_DATA;
 
 /// <summary>
-/// The DualSense controller input report structure.
+/// The DualSense Edge controller input report structure.
 /// </summary>
-typedef struct _DUO_CONTROLLER_INPUT_REPORT_DS
+typedef struct _DUO_CONTROLLER_INPUT_REPORT_DUALSENSE
 {
-	UINT8 LeftStickX;
-	UINT8 LeftStickY;
-	UINT8 RightStickX;
-	UINT8 RightStickY;
-	UINT8 TriggerLeft;
-	UINT8 TriggerRight;
+	UINT8 LeftStickHorizontal;
+	UINT8 LeftStickVertical;
+	UINT8 RightStickHorizontal;
+	UINT8 RightStickVertical;
+	UINT8 LeftTrigger;
+	UINT8 RightTrigger;
 	UINT8 SeqNo;
 
 	UINT8 DPad : 4;
-	UINT8 ButtonSquare : 1;
-	UINT8 ButtonCross : 1;
-	UINT8 ButtonCircle : 1;
-	UINT8 ButtonTriangle : 1;
+	UINT8 Square : 1;
+	UINT8 Cross : 1;
+	UINT8 Circle : 1;
+	UINT8 Triangle : 1;
 
-	UINT8 ButtonL1 : 1;
-	UINT8 ButtonR1 : 1;
-	UINT8 ButtonL2 : 1;
-	UINT8 ButtonR2 : 1;
-	UINT8 ButtonCreate : 1;
-	UINT8 ButtonOptions : 1;
-	UINT8 ButtonL3 : 1;
-	UINT8 ButtonR3 : 1;
+	UINT8 L1 : 1;
+	UINT8 R1 : 1;
+	UINT8 L2 : 1;
+	UINT8 R2 : 1;
+	UINT8 Create : 1;
+	UINT8 Options : 1;
+	UINT8 L3 : 1;
+	UINT8 R3 : 1;
 
-	UINT8 ButtonHome : 1;
-	UINT8 ButtonPad : 1;
-	UINT8 ButtonMute : 1;
+	UINT8 Home : 1;
+	UINT8 Touchpad : 1;
+	UINT8 Mute : 1;
 	UINT8 Reserved1 : 1;
-	UINT8 ButtonLeftFunction : 1;
-	UINT8 ButtonRightFunction : 1;
-	UINT8 ButtonLeftPaddle : 1;
-	UINT8 ButtonRightPaddle : 1;
+	UINT8 LeftFunction : 1;
+	UINT8 RightFunction : 1;
+	UINT8 LeftPaddle : 1;
+	UINT8 RightPaddle : 1;
 
 	UINT8 Reserved2;
 	UINT32 ReservedCounter;
@@ -213,16 +216,16 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT_DS
 
 	DS_TOUCH_DATA TouchData;
 
-	UINT8 TriggerRightStopLocation : 4;
-	UINT8 TriggerRightStatus : 4;
+	UINT8 RightTriggerStopLocation : 4;
+	UINT8 RightTriggerStatus : 4;
 
-	UINT8 TriggerLeftStopLocation : 4;
-	UINT8 TriggerLeftStatus : 4;
+	UINT8 LeftTriggerStopLocation : 4;
+	UINT8 LeftTriggerStatus : 4;
 
 	UINT32 HostTimestamp;
 
-	UINT8 TriggerRightEffect : 4;
-	UINT8 TriggerLeftEffect : 4;
+	UINT8 RightTriggerEffect : 4;
+	UINT8 LeftTriggerEffect : 4;
 
 	UINT32 DeviceTimeStamp;
 
@@ -243,7 +246,57 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT_DS
 	UINT8 Reserved3 : 6;
 
 	UINT8 AesCmac[8];
-} DUO_CONTROLLER_INPUT_REPORT_DS;
+} DUO_CONTROLLER_INPUT_REPORT_DUALSENSE;
+
+/// <summary>
+/// The DualShock 4 controller input report structure.
+/// </summary>
+typedef struct _DUO_CONTROLLER_INPUT_REPORT_DS4
+{
+	UINT8 LeftStickHorizontal;
+	UINT8 LeftStickVertical;
+	UINT8 RightStickHorizontal;
+	UINT8 RightStickVertical;
+
+	UINT8 LeftTrigger;
+	UINT8 RightTrigger;
+
+	UINT8 DPad; // 0 = Up, 1 = Up-Right, 2 = Right, 3 = Down-Right, 4 = Down, 5 = Down-Left, 6 = Left, 7 = Up-Left, 8 = Neutral
+
+	UINT8 Square : 1;
+	UINT8 Cross : 1;
+	UINT8 Circle : 1;
+	UINT8 Triangle : 1;
+	UINT8 L1 : 1;
+	UINT8 R1 : 1;
+	UINT8 L2 : 1;
+	UINT8 R2 : 1;
+	UINT8 Share : 1;
+	UINT8 Options : 1;
+	UINT8 L3 : 1;
+	UINT8 R3 : 1;
+	UINT8 PS : 1;
+	UINT8 Touchpad : 1;
+
+	INT16 AngularVelocityX;
+	INT16 AngularVelocityY;
+	INT16 AngularVelocityZ;
+
+	INT16 AccelerometerX;
+	INT16 AccelerometerY;
+	INT16 AccelerometerZ;
+
+	DS_TOUCH_DATA TouchData;
+
+	/*
+	UINT8 Touch1Active;
+	USHORT Touch1X;
+	USHORT Touch1Y;
+	UINT8 Touch2Active;
+	USHORT Touch2X;
+	USHORT Touch2Y;
+	*/
+} DUO_CONTROLLER_INPUT_REPORT_DS4;
 
 typedef struct _DUO_CONTROLLER_OUTPUT_REPORT_DS {
 	/*    */ // Report ID
@@ -423,21 +476,15 @@ HRESULT WINAPI DuoController_CreateController(DUO_CONTROLLER_TYPE controllerType
 /// Removes a Duo controller.
 /// </summary>
 /// <param name="controller">The controller to remove</param>
+/// <param name="inputReport">The controller-specific input report to send</param>
 /// <returns>Result</returns>
 HRESULT WINAPI DuoController_RemoveController(void* controller);
 
 /// <summary>
-/// Sends an Xbox input report to the given Duo controller.
+/// Sends an input report to the given Duo controller.
+/// The report type is determined by the controller type passed to DuoController_CreateController.
 /// </summary>
 /// <param name="controller">The controller to send the input report to</param>
-/// <param name="inputReport">The input report to send</param>
+/// <param name="inputReport">The controller-specific input report</param>
 /// <returns>Result</returns>
-HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED* inputReport);
-
-/// <summary>
-/// Sends a DualSense input report to the given Duo controller.
-/// </summary>
-/// <param name="controller">The controller to send the input report to</param>
-/// <param name="inputReport">The DualSense input report to send</param>
-/// <returns>Result</returns>
-HRESULT WINAPI DuoController_SendReportDs(void* controller, DUO_CONTROLLER_INPUT_REPORT_DS* inputReport);
+HRESULT WINAPI DuoController_SendReport(void* controller, void* inputReport);

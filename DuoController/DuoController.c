@@ -45,19 +45,8 @@
 /// </summary>
 typedef enum _SYNTHETIC_CONTROLLER_TYPE
 {
-	/// <summary>
-	/// A regular Xbox gamepad.
-	/// </summary>
 	SyntheticControllerTypeGamepad = 0,
-
-	/// <summary>
-	/// A remote Xbox gamepad that streams GIP packets to the synthetic controller.
-	/// </summary>
 	SyntheticControllerTypeGipStreamGamepad = 1,
-
-	/// <summary>
-	/// An extended Xbox gamepad with 4 additional paddle buttons.
-	/// </summary>
 	SyntheticControllerTypeExtendedGamepad = 2
 } SYNTHETIC_CONTROLLER_TYPE;
 
@@ -66,24 +55,9 @@ typedef enum _SYNTHETIC_CONTROLLER_TYPE
 /// </summary>
 typedef enum _SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE
 {
-	/// <summary>
-	/// The default Xbox controller input report containing all of its regular buttons, axes and triggers, minus Elite paddles.
-	/// </summary>
 	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_CONTROLLER = 0,
-
-	/// <summary>
-	/// The virtual key input report which contains the Guide button state.
-	/// </summary>
 	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_VKEY = 1,
-
-	/// <summary>
-	/// A raw stream of GIP packets.
-	/// </summary>
 	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_GIP_STREAM = 2,
-
-	/// <summary>
-	/// The extended Xbox controller input report containing all of its regular buttons, axes and triggers, including Elite paddles.
-	/// </summary>
 	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_EXTENDED_CONTROLLER = 3
 } SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE;
 
@@ -92,9 +66,6 @@ typedef enum _SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE
 /// </summary>
 typedef enum _SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE
 {
-	/// <summary>
-	/// The controller output report which contains the rumble motor speeds.
-	/// </summary>
 	SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER = 0
 } SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE;
 
@@ -122,9 +93,9 @@ typedef struct _DUO_CONTROLLER
 	// Xbox-specific fields
 	void* SyntheticHandle;
 	HDEVQUERY DeviceQuery;
-	DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED LastXboxInputReport;
+	DUO_CONTROLLER_INPUT_REPORT_XBOX LastXboxInputReport;
 
-	// DS-specific fields
+	// DualSense Edge-specific fields
 	WCHAR DsInstanceId[256];
 	WCHAR DsHidInstanceId[256];
 	HANDLE DsInputMapping;
@@ -136,8 +107,24 @@ typedef struct _DUO_CONTROLLER
 	HANDLE DsFfbThread;
 	HANDLE DsFfbStopEvent;
 	CRITICAL_SECTION DsCs;
-	DUO_CONTROLLER_INPUT_REPORT_DS LastDsInputReport;
+	DUO_CONTROLLER_INPUT_REPORT_DUALSENSE LastDsInputReport;
+
+	// DualShock 4-specific fields
+	WCHAR Ds4InstanceId[256];
+	WCHAR Ds4HidInstanceId[256];
+	HANDLE Ds4InputMapping;
+	HANDLE Ds4OutputMapping;
+	LPVOID Ds4InputView;
+	LPVOID Ds4OutputView;
+	HANDLE Ds4InputEvent;
+	HANDLE Ds4OutputEvent;
+	HANDLE Ds4FfbThread;
+	HANDLE Ds4FfbStopEvent;
+	CRITICAL_SECTION Ds4Cs;
+	DUO_CONTROLLER_INPUT_REPORT_DS4 LastDs4InputReport;
 } DUO_CONTROLLER;
+
+#pragma pack(pop)
 
 /// <summary>
 /// Defines a WNF type ID.
@@ -153,285 +140,67 @@ typedef struct _WNF_STATE_NAME {
 	ULONG Data[2];
 } WNF_STATE_NAME, * PWNF_STATE_NAME;
 
-#pragma pack(pop)
-
 /// <summary>
 /// The WNF state name used by ISM.dll (dwm.exe) to report focus changes.
 /// </summary>
 static WNF_STATE_NAME WNF_SHEL_FOCUS_CHANGE = { 0xA3BC7875, 0xD83063E };
 
-/// <summary>
-/// Receives output reports from the synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="outputReportType">The output report type</param>
-/// <param name="outputReportBuffer">The output report buffer</param>
-/// <param name="outputReportBufferSize">The size of the output report buffer</param>
-/// <param name="context">The context</param>
 typedef void(WINAPI *SyntheticController_ReportCallback_t)(void* controller, unsigned int outputReportType, void* outputReportBuffer, unsigned int outputReportBufferSize, void* context);
-
-/// <summary>
-/// Creates a new synthetic controller.
-/// </summary>
-/// <param name="controllerType">Controller type</param>
-/// <param name="controller">Receives the created controller</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_CreateController_t)(SYNTHETIC_CONTROLLER_TYPE controllerType, void** controller);
-
-/// <summary>
-/// Sets the target process for the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="processId">The target process ID, or NO_PROCESS to silence all controller output</param>
-/// <param name="inputReportType">The input report type</param>
-/// <param name="inputReportBuffer">The input report buffer</param>
-/// <param name="inputReportBufferSize">The size of the input report buffer</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_SetTargetProcess_t)(void* controller, unsigned long long processId /* or NO_PROCESS */, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE inputReportType, void* inputReportBuffer, unsigned int inputReportBufferSize);
-
-/// <summary>
-/// Registers an output report callback for the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="outputReportType">The output report type to register for</param>
-/// <param name="callback">The report callback</param>
-/// <param name="context">The context to pass to the callback</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_RegisterReportCallback_t)(void* controller, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE outputReportType, SyntheticController_ReportCallback_t callback, void* context);
-
-/// <summary>
-/// Connects the given synthetic controller to the system.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_Connect_t)(void* controller);
-
-/// <summary>
-/// Sends an input report to the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="inputReportType">The input report type</param>
-/// <param name="inputReportBuffer">The input report buffer</param>
-/// <param name="inputReportBufferSize">The size of the input report buffer</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_SendReport_t)(void* controller, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE inputReportType, void* inputReportBuffer, unsigned int inputReportBufferSize);
-
-/// <summary>
-/// Disconnects the given synthetic controller from the system.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_Disconnect_t)(void* controller);
-
-/// <summary>
-/// Unregisters an output report callback for the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="outputReportType">The output report type to unregister for</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_UnregisterReportCallback_t)(void* controller, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE outputReportType);
-
-/// <summary>
-/// Removes the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_RemoveController_t)(void* controller);
-
-/// <summary>
-/// Gets the device ID of the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="deviceId">Receives the device ID</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI *SyntheticController_GetDeviceId_t)(void* controller, unsigned long long* deviceId);
-
-/// <summary>
-/// Sets properties on a device object.
-/// </summary>
-/// <param name="ObjectType">The object type</param>
-/// <param name="pszObjectId">The object ID</param>
-/// <param name="pcPropertyCount">The property count</param>
-/// <param name="ppProperties">The properties</param>
-/// <returns>Result</returns>
 typedef HRESULT(WINAPI* DevSetObjectProperties_t)(DEV_OBJECT_TYPE ObjectType, PCWSTR pszObjectId, ULONG pcPropertyCount, const DEVPROPERTY* ppProperties);
-
-/// <summary>
-/// Publishes WNF state data.
-/// </summary>
-/// <param name="StateName">The WNF state name</param>
-/// <param name="TypeId">The WNF type ID, can be NULL</param>
-/// <param name="Buffer">The buffer containing the state data, can be NULL</param>
-/// <param name="Length">The length of the buffer</param>
-/// <param name="ExplicitScope">The explicit scope, can be NULL</param>
-/// <returns>Result</returns>
 typedef NTSTATUS(WINAPI* RtlPublishWnfStateData_t)(WNF_STATE_NAME StateName, const PWNF_TYPE_ID TypeId, const VOID* Buffer, ULONG Length, const VOID* ExplicitScope);
 
-/// <summary>
-/// Creates a new synthetic controller.
-/// </summary>
-/// <param name="controllerType">Controller type</param>
-/// <param name="controller">Receives the created controller</param>
-/// <returns>Result</returns>
 SyntheticController_CreateController_t SyntheticController_CreateController;
-
-/// <summary>
-/// Sets the target process for the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="processId">The target process ID, or NO_PROCESS to silence all controller output</param>
-/// <param name="inputReportType">The input report type</param>
-/// <param name="inputReportBuffer">The input report buffer</param>
-/// <param name="inputReportBufferSize">The size of the input report buffer</param>
-/// <returns>Result</returns>
 SyntheticController_SetTargetProcess_t SyntheticController_SetTargetProcess;
-
-/// <summary>
-/// Registers an output report callback for the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="outputReportType">The output report type to register for</param>
-/// <param name="callback">The report callback</param>
-/// <param name="context">The context to pass to the callback</param>
-/// <returns>Result</returns>
 SyntheticController_RegisterReportCallback_t SyntheticController_RegisterReportCallback;
-
-/// <summary>
-/// Connects the given synthetic controller to the system.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <returns>Result</returns>
 SyntheticController_Connect_t SyntheticController_Connect;
-
-/// <summary>
-/// Sends an input report to the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="inputReportType">The input report type</param>
-/// <param name="inputReportBuffer">The input report buffer</param>
-/// <param name="inputReportBufferSize">The size of the input report buffer</param>
-/// <returns>Result</returns>
 SyntheticController_SendReport_t SyntheticController_SendReport;
-
-/// <summary>
-/// Disconnects the given synthetic controller from the system.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <returns>Result</returns>
 SyntheticController_Disconnect_t SyntheticController_Disconnect;
-
-/// <summary>
-/// Unregisters an output report callback for the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="outputReportType">The output report type to unregister for</param>
-/// <returns>Result</returns>
 SyntheticController_UnregisterReportCallback_t SyntheticController_UnregisterReportCallback;
-
-/// <summary>
-/// Removes the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <returns>Result</returns>
 SyntheticController_RemoveController_t SyntheticController_RemoveController;
-
-/// <summary>
-/// Gets the device ID of the given synthetic controller.
-/// </summary>
-/// <param name="controller">The controller</param>
-/// <param name="deviceId">Receives the device ID</param>
-/// <returns>Result</returns>
 SyntheticController_GetDeviceId_t SyntheticController_GetDeviceId;
-
-/// <summary>
-/// Sets properties on a device object.
-/// </summary>
-/// <param name="ObjectType">The object type</param>
-/// <param name="pszObjectId">The object ID</param>
-/// <param name="pcPropertyCount">The property count</param>
-/// <param name="ppProperties">The properties</param>
-/// <returns>Result</returns>
 DevSetObjectProperties_t DevSetObjectProperties;
-
-/// <summary>
-/// Publishes WNF state data.
-/// </summary>
-/// <param name="StateName">The WNF state name</param>
-/// <param name="TypeId">The WNF type ID, can be NULL</param>
-/// <param name="Buffer">The buffer containing the state data, can be NULL</param>
-/// <param name="Length">The length of the buffer</param>
-/// <param name="ExplicitScope">The explicit scope, can be NULL</param>
-/// <returns>Result</returns>
 RtlPublishWnfStateData_t RtlPublishWnfStateData;
 
-/// <summary>
-/// The current session ID.
-/// </summary>
 static DWORD SessionId;
-
-/// <summary>
-/// The current state of the DuoController library.
-/// </summary>
 static BOOL Initialized;
-
-/// <summary>
-/// The current session's foreground window process ID.
-/// </summary>
 static DWORD ForegroundWindowProcessId;
-
-/// <summary>
-/// The created controllers.
-/// </summary>
 static DUO_CONTROLLER** Controllers = NULL;
-
-/// <summary>
-/// The number of created controllers.
-/// </summary>
 static DWORD ControllerCount = 0;
 
-/// <summary>
-/// Initializes the Windows Runtime for the current thread if not already initialized.
-/// </summary>
 static void InitializeWindowsRuntimeForCurrentThread()
 {
-	// Create a HSTRING for Windows.Internal.Gaming.SWDDeviceStatics
 	const wchar_t* type_name = L"Windows.Internal.Gaming.SWDDeviceStatics";
 	HSTRING_HEADER header;
 	memset(&header, 0, sizeof(header));
 	HSTRING string = NULL;
 	if (SUCCEEDED(WindowsCreateStringReference(type_name, (UINT32)wcslen(type_name), &header, &string)))
 	{
-		// The IID for Windows.Internal.Gaming.SWDDeviceStatics
 		const GUID IID_SWDeviceStatics = {
 			0x5189313c, 0xfc43, 0x41b2, { 0x82, 0xcc, 0x27, 0x1a, 0x0e, 0xe2, 0x9e, 0x80 }
 		};
-
-		// Get the activation factory for Windows.Internal.Gaming.SWDDeviceStatics
 		void* factory = NULL;
 		if (FAILED(RoGetActivationFactory(string, &IID_SWDeviceStatics, &factory)))
 		{
-			// Initialize the Windows Runtime for the current thread
 			RoInitialize(RO_INIT_MULTITHREADED);
 		}
 	}
 }
 
-/// <summary>
-/// The callback that is called when a device is added, removed or updated.
-/// </summary>
-/// <param name="query">The query that triggered this callback</param>
-/// <param name="context">The context</param>
-/// <param name="actionData">The action data</param>
 static void WINAPI DuoController_DeviceChanged(_In_ HDEVQUERY query, _In_opt_ PVOID context, _In_ const DEV_QUERY_RESULT_ACTION_DATA* actionData)
 {
-	// Unreferenced parameters
 	(void)query;
 	(void)context;
-
-	// A new device has been added
 	if (actionData->Action == DevQueryResultAdd)
 	{
-		// Set the session ID property
 		DEVPROPERTY deviceProperty;
 		deviceProperty.CompKey.Key = DEVPKEY_Device_SessionId;
 		deviceProperty.CompKey.Store = DEVPROP_STORE_SYSTEM;
@@ -443,102 +212,48 @@ static void WINAPI DuoController_DeviceChanged(_In_ HDEVQUERY query, _In_opt_ PV
 	}
 }
 
-/// <summary>
-/// Gets the process ID of the current session's foreground window.
-/// </summary>
-/// <param name="timeoutMs">The timeout in milliseconds</param>
-/// <returns>The process ID of the foreground window, or 0 if the timeout is reached</returns>
 DWORD GetForegroundWindowProcessId(DWORD timeoutMs)
 {
-	// The foreground window process ID
 	DWORD processId = 0;
-
-	// Get the start time
 	DWORD startTime = GetTickCount();
-
 	do
 	{
-		// Try getting the current session's foreground window
 		HWND hwnd = GetForegroundWindow();
-
-		// We've found the current session's foreground window
 		if (hwnd != NULL)
 		{
-			// Get the process ID of the foreground window
 			GetWindowThreadProcessId(hwnd, &processId);
-
-			// Return the process ID
 			break;
 		}
-
-		// Wait a bit before re-trying
 		Sleep(10);
 	} while ((GetTickCount64() - startTime) < timeoutMs);
-
-	// Return the foreground window process ID
 	return processId;
 }
 
-/// <summary>
-/// Updates the GameInput driver's focus state.
-/// </summary>
-/// <returns>Result</returns>
 static NTSTATUS UpdateGameInputDriverFocusState()
 {
-	// The result
 	NTSTATUS result = ERROR_PROC_NOT_FOUND;
-
-	// We can restore the focus the GIP driver needs
 	if (RtlPublishWnfStateData != NULL)
 	{
-		// Focus the session's current foreground window process
 		result = RtlPublishWnfStateData(WNF_SHEL_FOCUS_CHANGE, NULL, &ForegroundWindowProcessId, sizeof(ForegroundWindowProcessId), NULL);
 	}
-
-	// Return the result
 	return result;
 }
 
-/// <summary>
-/// The callback that is called when an output report is received from a synthetic controller.
-/// </summary>
-/// <param name="controller">Synthetic controller handle</param>
-/// <param name="outputReportType">Output report type</param>
-/// <param name="outputReportBuffer">Output report buffer</param>
-/// <param name="outputReportBufferSize">Output report buffer size</param>
-/// <param name="context">Context</param>
 static void CALLBACK DuoController_OutputReportReceived(void* controller, unsigned int outputReportType, void* outputReportBuffer, unsigned int outputReportBufferSize, void* context)
 {
-	// Unreferenced parameters
 	(void)controller;
-
-	// Initialize the Windows Runtime for the current thread
 	InitializeWindowsRuntimeForCurrentThread();
-
-	// Update the current session's foreground window process ID
 	ForegroundWindowProcessId = GetForegroundWindowProcessId(500);
-
-	// Cast the context to a DuoController
 	DUO_CONTROLLER* duoController = (DUO_CONTROLLER*)context;
-
-	// Cast the controller output report buffer
 	DUO_CONTROLLER_FORCE_FEEDBACK_REPORT* outputReport = (DUO_CONTROLLER_FORCE_FEEDBACK_REPORT*)outputReportBuffer;
-
-	// We've received a controller output report and can forward it
 	if (outputReportType == SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER &&
 		outputReportBuffer != NULL && outputReportBufferSize >= sizeof(DUO_CONTROLLER_FORCE_FEEDBACK_REPORT) &&
 		duoController != NULL && duoController->VibrationReportCallback != NULL)
 	{
-		// Forward the vibration data to the registered callback
 		duoController->VibrationReportCallback(duoController, outputReport, duoController->VibrationReportCallbackContext);
 	}
 }
 
-/// <summary>
-/// Converts a Win32 error code to an HRESULT.
-/// </summary>
-/// <param name="error">The Win32 error code</param>
-/// <returns>The HRESULT</returns>
 static HRESULT DsWin32ErrorToHresult(DWORD error)
 {
 	switch (error)
@@ -563,12 +278,6 @@ static HRESULT DsWin32ErrorToHresult(DWORD error)
 	}
 }
 
-/// <summary>
-/// Sanitizes a device instance ID for use as a pipe name component.
-/// </summary>
-/// <param name="instanceId">The device instance ID</param>
-/// <param name="sanitized">Receives the sanitized string</param>
-/// <param name="sanitizedSize">The size of the sanitized buffer in characters</param>
 static void SanitizeInstanceIdForPipeName(const WCHAR* instanceId, WCHAR* sanitized, size_t sanitizedSize)
 {
 	size_t i;
@@ -579,106 +288,57 @@ static void SanitizeInstanceIdForPipeName(const WCHAR* instanceId, WCHAR* saniti
 	sanitized[i] = L'\0';
 }
 
-/// <summary>
-/// Checks if the current process is running with elevated privileges.
-/// </summary>
-/// <returns>TRUE if elevated, FALSE otherwise</returns>
 static BOOL IsProcessElevated()
 {
 	HANDLE token = NULL;
 	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
 		return FALSE;
-
 	TOKEN_ELEVATION elevation;
 	DWORD size = 0;
 	BOOL elevated = FALSE;
 	if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size))
 		elevated = elevation.TokenIsElevated;
-
 	CloseHandle(token);
 	return elevated;
 }
 
-/// <summary>
-/// Installs a new DuoController device and returns its instance ID and HID child instance ID.
-/// </summary>
-/// <param name="instanceId">Receives the instance ID of the newly created device</param>
-/// <param name="instanceIdSize">The size of the instance ID buffer in characters</param>
-/// <param name="hidInstanceId">Receives the instance ID of the HID child device</param>
-/// <param name="hidInstanceIdSize">The size of the HID instance ID buffer in characters</param>
-/// <returns>Result</returns>
-static HRESULT InstallDuoControllerDevice(WCHAR* instanceId, DWORD instanceIdSize, WCHAR* hidInstanceId, DWORD hidInstanceIdSize)
+static HRESULT InstallDuoControllerDevice(const WCHAR* hardwareId, const WCHAR* deviceIdSeed, WCHAR* instanceId, DWORD instanceIdSize, WCHAR* hidInstanceId, DWORD hidInstanceIdSize)
 {
-	// The result
 	HRESULT result = S_OK;
-
-	// Get the DuoController DLL path to locate the DuoController driver files
 	HMODULE hMod = NULL;
 	if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)&DuoController_Initialize, &hMod))
 		return HRESULT_FROM_WIN32(GetLastError());
-
 	WCHAR dllPath[MAX_PATH];
 	if (GetModuleFileNameW(hMod, dllPath, MAX_PATH) == 0)
 		return HRESULT_FROM_WIN32(GetLastError());
-
-	// Find the last backslash to get the DuoController directory
 	WCHAR* lastSlash = wcsrchr(dllPath, L'\\');
 	if (lastSlash == NULL)
 		return E_UNEXPECTED;
-
 	*(lastSlash + 1) = L'\0';
-
-	// Build the INF path: DuoController directory\DuoController.inf
 	WCHAR infPath[MAX_PATH];
 	wcscpy_s(infPath, MAX_PATH, dllPath);
 	wcscat_s(infPath, MAX_PATH, L"DuoController.inf");
-
-	// Check if the driver files exist
 	if (GetFileAttributesW(infPath) == INVALID_FILE_ATTRIBUTES)
 		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
-
-	// We need elevation to install a device
 	if (!IsProcessElevated())
 		return E_ACCESSDENIED;
-
-	// The hardware ID for the DualSense device (matches DuoController.inf)
-	const WCHAR* hardwareId = L"Root\\VID_054C&PID_0DF2";
-
-	// The device ID seed
-	const WCHAR* deviceIdSeed = L"VID_054C&PID_0DF2&DUOCONTROLLER";
-
-	// Get the full INF path
 	WCHAR fullInfPath[MAX_PATH];
 	if (!GetFullPathNameW(infPath, MAX_PATH, fullInfPath, NULL))
 		return HRESULT_FROM_WIN32(GetLastError());
-
-	// Get the class GUID from the INF
 	GUID classGuid;
 	WCHAR className[MAX_CLASS_NAME_LEN];
 	DWORD requiredSize = 0;
 	if (!SetupDiGetINFClassW(fullInfPath, &classGuid, className, MAX_CLASS_NAME_LEN, &requiredSize))
 		return HRESULT_FROM_WIN32(GetLastError());
-
-	// Create a device info list for the class
 	HDEVINFO hDevInfo = SetupDiCreateDeviceInfoList(&classGuid, NULL);
 	if (hDevInfo == INVALID_HANDLE_VALUE)
 		return HRESULT_FROM_WIN32(GetLastError());
-
-	// Whether a reboot is required or not
 	BOOL rebootRequired = FALSE;
-
-	// Check if the driver is already installed in the driver store
 	BOOL driverInStore = FALSE;
 	if (!SetupCopyOEMInfW(fullInfPath, NULL, SPOST_NONE, SP_COPY_NOOVERWRITE, NULL, 0, NULL, NULL) && GetLastError() == ERROR_FILE_EXISTS)
-	{
-		// The driver is already installed in the driver store
 		driverInStore = TRUE;
-	}
-
-	// The driver hasn't been installed into the driver store yet
 	if (!driverInStore)
 	{
-		// Install the driver into the driver store
 		if (!DiInstallDriverW(NULL, fullInfPath, DIIRFLAG_FORCE_INF, &rebootRequired))
 		{
 			result = HRESULT_FROM_WIN32(GetLastError());
@@ -686,20 +346,15 @@ static HRESULT InstallDuoControllerDevice(WCHAR* instanceId, DWORD instanceIdSiz
 			return result;
 		}
 	}
-
-	// Create the device info element
 	SP_DEVINFO_DATA devInfoData;
 	ZeroMemory(&devInfoData, sizeof(devInfoData));
 	devInfoData.cbSize = sizeof(devInfoData);
-
 	if (!SetupDiCreateDeviceInfoW(hDevInfo, deviceIdSeed, &classGuid, NULL, NULL, DICD_GENERATE_ID, &devInfoData))
 	{
 		result = HRESULT_FROM_WIN32(GetLastError());
 		SetupDiDestroyDeviceInfoList(hDevInfo);
 		return result;
 	}
-
-	// Set the hardware ID property
 	DWORD hwIdLen = (DWORD)(wcslen(hardwareId) * sizeof(WCHAR));
 	if (!SetupDiSetDeviceRegistryPropertyW(hDevInfo, &devInfoData, SPDRP_HARDWAREID, (const BYTE*)hardwareId, hwIdLen + sizeof(WCHAR)))
 	{
@@ -707,45 +362,30 @@ static HRESULT InstallDuoControllerDevice(WCHAR* instanceId, DWORD instanceIdSiz
 		SetupDiDestroyDeviceInfoList(hDevInfo);
 		return result;
 	}
-
-	// Register the device with the system
 	if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, hDevInfo, &devInfoData))
 	{
 		result = HRESULT_FROM_WIN32(GetLastError());
 		SetupDiDestroyDeviceInfoList(hDevInfo);
 		return result;
 	}
-
-	// Get the instance ID assigned to our new device
 	if (!SetupDiGetDeviceInstanceIdW(hDevInfo, &devInfoData, instanceId, instanceIdSize, NULL))
 	{
 		result = HRESULT_FROM_WIN32(GetLastError());
 		SetupDiDestroyDeviceInfoList(hDevInfo);
 		return result;
 	}
-
-	// Open or create the Duo registry key
 	HKEY duoRegistryKey;
 	LONG status = RegCreateKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Duo", 0, NULL, REG_OPTION_VOLATILE, KEY_READ | KEY_WRITE, NULL, &duoRegistryKey, NULL);
 	if (status == ERROR_SUCCESS)
 	{
-		// The value name
 		LPCWSTR valueName = L"DuoControllerSessionId";
-
-		// Write the session ID to the registry so that the driver can read it when it starts
 		RegSetValueExW(duoRegistryKey, valueName, 0, REG_DWORD, (const BYTE*)&SessionId, sizeof(SessionId));
-
-		// Link the the driver to the device
 		if (!DiInstallDevice(NULL, hDevInfo, &devInfoData, NULL, DIIDFLAG_INSTALLCOPYINFDRIVERS, &rebootRequired))
 		{
 			result = HRESULT_FROM_WIN32(GetLastError());
 			SetupDiDestroyDeviceInfoList(hDevInfo);
 			return result;
 		}
-
-		// Poll for the HID child device to appear.
-		// The DuoController INF installs mshidumdf.sys which creates a HID
-		// child device. Track this child so it can be properly removed later.
 		if (hidInstanceId != NULL && hidInstanceIdSize > 0)
 		{
 			hidInstanceId[0] = L'\0';
@@ -764,7 +404,7 @@ static HRESULT InstallDuoControllerDevice(WCHAR* instanceId, DWORD instanceIdSiz
 						ULONG len = ARRAYSIZE(childId);
 						if (CM_Get_Device_IDW(childDevInst, childId, len, 0) == CR_SUCCESS)
 						{
-							if (wcsstr(childId, L"VID_054C&PID_0DF2&DUOCONTROLLER") != NULL)
+							if (wcsstr(childId, deviceIdSeed) != NULL)
 							{
 								wcscpy_s(hidInstanceId, hidInstanceIdSize, childId);
 								break;
@@ -775,35 +415,17 @@ static HRESULT InstallDuoControllerDevice(WCHAR* instanceId, DWORD instanceIdSiz
 				Sleep(100);
 			}
 		}
-
-		// Clean up the registry
 		RegDeleteValueW(duoRegistryKey, valueName);
-
-		// Close the registry key
 		RegCloseKey(duoRegistryKey);
 	}
-
-	// Clean up
 	SetupDiDestroyDeviceInfoList(hDevInfo);
-
 	return result;
 }
 
-/// <summary>
-/// Removes a DuoController device and its HID child by their instance IDs.
-/// </summary>
-/// <param name="instanceId">The instance ID of the root device to remove</param>
-/// <param name="hidInstanceId">The instance ID of the HID child device to remove first, can be NULL or empty</param>
-/// <returns>Result</returns>
 static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId, const WCHAR* hidInstanceId)
 {
-	// We need elevation to remove a device
 	if (!IsProcessElevated())
 		return E_ACCESSDENIED;
-
-	// If we have a HID child device tracked, remove it first.
-	// This ensures the HID device is properly removed independent of
-	// root device removal cascading behavior.
 	if (hidInstanceId != NULL && hidInstanceId[0] != L'\0')
 	{
 		HDEVINFO hHidInfo = SetupDiCreateDeviceInfoList(NULL, NULL);
@@ -818,7 +440,6 @@ static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId, const WCHAR* h
 				removeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
 				removeParams.ClassInstallHeader.InstallFunction = DIF_REMOVE;
 				removeParams.Scope = DI_REMOVEDEVICE_GLOBAL;
-
 				if (SetupDiSetClassInstallParamsW(hHidInfo, &hidDevInfoData,
 					(PSP_CLASSINSTALL_HEADER)&removeParams, sizeof(removeParams)))
 				{
@@ -831,12 +452,9 @@ static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId, const WCHAR* h
 			SetupDiDestroyDeviceInfoList(hHidInfo);
 		}
 	}
-
-	// Remove root device
 	HDEVINFO hDevInfo = SetupDiCreateDeviceInfoList(NULL, NULL);
 	if (hDevInfo == INVALID_HANDLE_VALUE)
 		return HRESULT_FROM_WIN32(GetLastError());
-
 	HRESULT result = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 	SP_DEVINFO_DATA devInfoData;
 	devInfoData.cbSize = sizeof(devInfoData);
@@ -847,50 +465,35 @@ static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId, const WCHAR* h
 		removeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
 		removeParams.ClassInstallHeader.InstallFunction = DIF_REMOVE;
 		removeParams.Scope = DI_REMOVEDEVICE_GLOBAL;
-
 		if (SetupDiSetClassInstallParamsW(hDevInfo, &devInfoData,
 			(PSP_CLASSINSTALL_HEADER)&removeParams, sizeof(removeParams)))
 		{
 			if (SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfoData) || SetupDiRemoveDevice(hDevInfo, &devInfoData))
-			{
 				result = S_OK;
-			}
 			else
-			{
 				result = HRESULT_FROM_WIN32(GetLastError());
-			}
 		}
 		else
 		{
 			result = HRESULT_FROM_WIN32(GetLastError());
 		}
 	}
-
 	SetupDiDestroyDeviceInfoList(hDevInfo);
 	return result;
 }
 
-/// <summary>
-/// Opens the DualSense input shared memory region and event for the given device instance ID.
-/// </summary>
-/// <param name="controller">The DuoController to connect</param>
-/// <returns>Result</returns>
+// ==================== DualSense Edge shared memory helpers ====================
+
 static HRESULT DsConnectInput(DUO_CONTROLLER* controller)
 {
-	// Build the shared memory names
 	WCHAR sanitized[256];
 	SanitizeInstanceIdForPipeName(controller->DsInstanceId, sanitized, ARRAYSIZE(sanitized));
-
 	WCHAR mappingName[512];
 	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_input", sanitized);
-
 	WCHAR eventName[512];
 	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_input_event", sanitized);
-
-	// Retry loop: wait for DuoController to create the shared memory
 	DWORD startTime = GetTickCount();
 	HANDLE hMapping = NULL;
-
 	while (GetTickCount() - startTime < 1000)
 	{
 		hMapping = OpenFileMappingW(FILE_MAP_WRITE, FALSE, mappingName);
@@ -898,22 +501,14 @@ static HRESULT DsConnectInput(DUO_CONTROLLER* controller)
 			break;
 		Sleep(10);
 	}
-
 	if (hMapping == NULL)
-	{
-		DWORD err = GetLastError();
-		return (err == ERROR_FILE_NOT_FOUND) ? HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) : DsWin32ErrorToHresult(err);
-	}
-
-	// Map the input shared memory
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 	LPVOID view = MapViewOfFile(hMapping, FILE_MAP_WRITE, 0, 0, 0);
 	if (view == NULL)
 	{
 		CloseHandle(hMapping);
 		return DsWin32ErrorToHresult(GetLastError());
 	}
-
-	// Open the input event (need EVENT_MODIFY_STATE to SetEvent)
 	HANDLE hEvent = OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName);
 	if (hEvent == NULL)
 	{
@@ -921,103 +516,58 @@ static HRESULT DsConnectInput(DUO_CONTROLLER* controller)
 		CloseHandle(hMapping);
 		return DsWin32ErrorToHresult(GetLastError());
 	}
-
 	controller->DsInputMapping = hMapping;
 	controller->DsInputView = view;
 	controller->DsInputEvent = hEvent;
 	return S_OK;
 }
 
-/// <summary>
-/// The thread procedure that reads force feedback data from the DualSense output shared memory.
-/// </summary>
-/// <param name="param">The DUO_CONTROLLER pointer</param>
-/// <returns>Thread exit code</returns>
 static DWORD WINAPI DsFfbThreadProc(LPVOID param)
 {
-	// Cast the controller pointer
 	DUO_CONTROLLER* controller = (DUO_CONTROLLER*)param;
-
-	// Build a wait handle array for the stop event and the output event
 	HANDLE waitHandles[2] = { controller->DsFfbStopEvent, controller->DsOutputEvent };
-
 	while (1)
 	{
-		// Wait for either the stop event or the output event to be signaled
 		DWORD wr = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
-
-		// The stop event was signaled
 		if (wr == WAIT_OBJECT_0)
-		{
 			break;
-		}
-
-		// The output event was signaled
 		if (wr == WAIT_OBJECT_0 + 1)
 		{
-			// Cast the shared memory to the output report structure
 			DUO_CONTROLLER_OUTPUT_REPORT_DS* outputMem = (DUO_CONTROLLER_OUTPUT_REPORT_DS*)controller->DsOutputView;
-
-			// Verify we've actually received an output report
 			if (outputMem->ReportId == DS_OUTPUT_REPORT_ID)
 			{
-				// Convert the DualSense output report into a regular force feedback report
 				DUO_CONTROLLER_FORCE_FEEDBACK_REPORT ffReport;
 				ZeroMemory(&ffReport, sizeof(ffReport));
-
-				// Always pretend the motor values are valid
 				ffReport.Flags = SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_RIGHT_MOTOR_VALID | SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_LEFT_MOTOR_VALID;
-
-				// If UseRumbleNotHaptics is set, the RumbleEmulationRight and RumbleEmulationLeft fields are populated with emulated rumble values
 				if (outputMem->UseRumbleNotHaptics)
 				{
-					// Use the emulated rumble values (should we scale them from 127 to 255 to unify the ranges?)
 					ffReport.RightMotor = outputMem->RumbleEmulationRight;
 					ffReport.LeftMotor = outputMem->RumbleEmulationLeft;
 				}
-
-				// Grab the callback and context under the critical section
 #pragma warning(suppress:4366)
 				EnterCriticalSection(&controller->DsCs);
 				DuoController_VibrationReportCallback_t callback = controller->VibrationReportCallback;
 				void* context = controller->VibrationReportCallbackContext;
 #pragma warning(suppress:4366)
 				LeaveCriticalSection(&controller->DsCs);
-
-				// We've got a callback to call into
 				if (callback != NULL)
-				{
-					// Forward the force feedback report to the registered callback
 					callback(controller, &ffReport, context);
-				}
 			}
 		}
 	}
-
 	return 0;
 }
 
-/// <summary>
-/// Opens the DualSense output (FFB) shared memory region and starts the FFB read thread.
-/// </summary>
-/// <param name="controller">The DuoController to connect</param>
-/// <returns>Result</returns>
 static HRESULT DsConnectFfb(DUO_CONTROLLER* controller)
 {
-	// Build the shared memory names
 	WCHAR sanitized[256];
 	SanitizeInstanceIdForPipeName(controller->DsInstanceId, sanitized, ARRAYSIZE(sanitized));
-
 	WCHAR mappingName[512];
 	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_output", sanitized);
-
 	WCHAR eventName[512];
 	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_output_event", sanitized);
-
-	// Retry loop: wait for DuoController to create the shared memory
 	DWORD startTime = GetTickCount();
 	HANDLE hMapping = NULL;
-
 	while (GetTickCount() - startTime < 1000)
 	{
 		hMapping = OpenFileMappingW(FILE_MAP_READ, FALSE, mappingName);
@@ -1025,22 +575,14 @@ static HRESULT DsConnectFfb(DUO_CONTROLLER* controller)
 			break;
 		Sleep(10);
 	}
-
 	if (hMapping == NULL)
-	{
-		DWORD err = GetLastError();
-		return (err == ERROR_FILE_NOT_FOUND) ? HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) : DsWin32ErrorToHresult(err);
-	}
-
-	// Map the output shared memory
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 	LPVOID view = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
 	if (view == NULL)
 	{
 		CloseHandle(hMapping);
 		return DsWin32ErrorToHresult(GetLastError());
 	}
-
-	// Open the output event (need SYNCHRONIZE to WaitForSingleObject)
 	HANDLE hEvent = OpenEventW(SYNCHRONIZE, FALSE, eventName);
 	if (hEvent == NULL)
 	{
@@ -1048,12 +590,9 @@ static HRESULT DsConnectFfb(DUO_CONTROLLER* controller)
 		CloseHandle(hMapping);
 		return DsWin32ErrorToHresult(GetLastError());
 	}
-
 	controller->DsOutputMapping = hMapping;
 	controller->DsOutputView = view;
 	controller->DsOutputEvent = hEvent;
-
-	// Create the stop event
 	controller->DsFfbStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (!controller->DsFfbStopEvent)
 	{
@@ -1065,8 +604,6 @@ static HRESULT DsConnectFfb(DUO_CONTROLLER* controller)
 		controller->DsOutputMapping = NULL;
 		return HRESULT_FROM_WIN32(GetLastError());
 	}
-
-	// Create the FFB read thread
 	controller->DsFfbThread = CreateThread(NULL, 0, DsFfbThreadProc, controller, 0, NULL);
 	if (!controller->DsFfbThread)
 	{
@@ -1080,14 +617,9 @@ static HRESULT DsConnectFfb(DUO_CONTROLLER* controller)
 		controller->DsOutputMapping = NULL;
 		return HRESULT_FROM_WIN32(GetLastError());
 	}
-
 	return S_OK;
 }
 
-/// <summary>
-/// Disconnects the DualSense input shared memory.
-/// </summary>
-/// <param name="controller">The DuoController</param>
 static void DsDisconnectInput(DUO_CONTROLLER* controller)
 {
 	if (controller->DsInputEvent != NULL)
@@ -1107,13 +639,8 @@ static void DsDisconnectInput(DUO_CONTROLLER* controller)
 	}
 }
 
-/// <summary>
-/// Disconnects the DualSense FFB shared memory and stops the FFB thread.
-/// </summary>
-/// <param name="controller">The DuoController</param>
 static void DsDisconnectFfb(DUO_CONTROLLER* controller)
 {
-	// Signal the FFB thread to stop
 	if (controller->DsFfbStopEvent != NULL)
 	{
 		SetEvent(controller->DsFfbStopEvent);
@@ -1126,22 +653,16 @@ static void DsDisconnectFfb(DUO_CONTROLLER* controller)
 		CloseHandle(controller->DsFfbStopEvent);
 		controller->DsFfbStopEvent = NULL;
 	}
-
-	// Close the output event
 	if (controller->DsOutputEvent != NULL)
 	{
 		CloseHandle(controller->DsOutputEvent);
 		controller->DsOutputEvent = NULL;
 	}
-
-	// Unmap the output view
 	if (controller->DsOutputView != NULL)
 	{
 		UnmapViewOfFile(controller->DsOutputView);
 		controller->DsOutputView = NULL;
 	}
-
-	// Close the output mapping
 	if (controller->DsOutputMapping != NULL)
 	{
 		CloseHandle(controller->DsOutputMapping);
@@ -1149,77 +670,40 @@ static void DsDisconnectFfb(DUO_CONTROLLER* controller)
 	}
 }
 
-/// <summary>
-/// Serializes a DualSense input report into a raw HID report and sends it over the pipe.
-/// </summary>
-/// <param name="controller">The DuoController</param>
-/// <param name="state">The DualSense input state to send</param>
-/// <returns>Result</returns>
-static HRESULT DsSendRawInput(DUO_CONTROLLER* controller, const DUO_CONTROLLER_INPUT_REPORT_DS* state)
+static HRESULT DsSendRawInput(DUO_CONTROLLER* controller, const DUO_CONTROLLER_INPUT_REPORT_DUALSENSE* state)
 {
 	if (controller->DsInputView == NULL)
-	{
 		return HRESULT_FROM_WIN32(ERROR_PIPE_NOT_CONNECTED);
-	}
-
-	// Build the raw 64-byte DualSense HID report (Report ID 0x01, USB)
-	// The struct matches the USBGetStateData wire format exactly, so we can
-	// memcpy it directly after the Report ID byte.
 	BYTE report[DS_REPORT_SIZE];
 	ZeroMemory(report, DS_REPORT_SIZE);
-
 	report[0] = DS_INPUT_REPORT_ID;
-
-	// Copy the entire USBGetStateData struct (63 bytes) starting at byte 1
-	memcpy(&report[1], state, sizeof(DUO_CONTROLLER_INPUT_REPORT_DS));
-
-	// Override reserved/unused battery-status fields with defaults if zeroed
-	// so the host sees a connected, powered controller even without explicit setup.
+	memcpy(&report[1], state, sizeof(DUO_CONTROLLER_INPUT_REPORT_DUALSENSE));
 	if (state->PowerPercent == 0 && state->PowerState == 0)
-	{
-		report[53] = (0x00 << 4) | 0x0A; // Discharging, 100%
-	}
+		report[53] = (0x00 << 4) | 0x0A;
 	if (state->PluggedUsbData == 0 && state->PluggedUsbPower == 0)
-	{
-		report[54] = 0x18; // USB data + power connected
-	}
-
-	// Write the message header + report to shared memory
+		report[54] = 0x18;
 	BYTE* inputMem = (BYTE*)controller->DsInputView;
 	inputMem[0] = DS_INPUT_REPORT_FULL;
 	inputMem[1] = DS_REPORT_SIZE;
 	memcpy(&inputMem[MESSAGE_HEADER_LEN], report, DS_REPORT_SIZE);
-
-	// Signal the input event
 	if (!SetEvent(controller->DsInputEvent))
-	{
 		return DsWin32ErrorToHresult(GetLastError());
-	}
-
 	return S_OK;
 }
 
-/// <summary>
-/// Creates a new DualSense controller by installing a new DuoController device and connecting to it.
-/// </summary>
-/// <param name="controller">The DuoController to initialize as DualSense</param>
-/// <returns>Result</returns>
-static HRESULT CreateDsController(DUO_CONTROLLER* controller)
+static HRESULT CreateDualSenseController(DUO_CONTROLLER* controller, USHORT pid)
 {
-	// Install a new DuoController device
 	WCHAR instanceId[256];
 	WCHAR hidInstanceId[256];
-	HRESULT result = InstallDuoControllerDevice(instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
+	WCHAR hwid[64];
+	swprintf_s(hwid, ARRAYSIZE(hwid), L"Root\\VID_054C&PID_%04X", pid);
+	WCHAR seed[64];
+	swprintf_s(seed, ARRAYSIZE(seed), L"VID_054C&PID_%04X&DUOCONTROLLER", pid);
+	HRESULT result = InstallDuoControllerDevice(hwid, seed, instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
 	if (FAILED(result))
-	{
 		return result;
-	}
-
-	// Store the instance IDs
 	wcscpy_s(controller->DsInstanceId, ARRAYSIZE(controller->DsInstanceId), instanceId);
 	wcscpy_s(controller->DsHidInstanceId, ARRAYSIZE(controller->DsHidInstanceId), hidInstanceId);
-
-	// Initialize DualSense-specific state
 	controller->DsInputMapping = NULL;
 	controller->DsOutputMapping = NULL;
 	controller->DsInputView = NULL;
@@ -1230,8 +714,6 @@ static HRESULT CreateDsController(DUO_CONTROLLER* controller)
 	controller->DsFfbStopEvent = NULL;
 #pragma warning(suppress:4366)
 	InitializeCriticalSection(&controller->DsCs);
-
-	// Connect to the input shared memory
 	result = DsConnectInput(controller);
 	if (FAILED(result))
 	{
@@ -1239,8 +721,6 @@ static HRESULT CreateDsController(DUO_CONTROLLER* controller)
 		DeleteCriticalSection(&controller->DsCs);
 		return result;
 	}
-
-	// Connect to the FFB output shared memory
 	result = DsConnectFfb(controller);
 	if (FAILED(result))
 	{
@@ -1249,38 +729,19 @@ static HRESULT CreateDsController(DUO_CONTROLLER* controller)
 		DeleteCriticalSection(&controller->DsCs);
 		return result;
 	}
-
 	return S_OK;
 }
 
-/// <summary>
-/// Removes a DualSense controller by disconnecting shared memory and removing the device.
-/// </summary>
-/// <param name="controller">The DuoController to clean up</param>
-/// <returns>Result</returns>
-static HRESULT RemoveDsController(DUO_CONTROLLER* controller)
+static HRESULT RemoveDualSenseController(DUO_CONTROLLER* controller)
 {
-	// Stop the FFB thread and close the output pipe
 	DsDisconnectFfb(controller);
-
-	// Close the input pipe
 	DsDisconnectInput(controller);
-
-	// Delete the critical section
 #pragma warning(suppress:4366)
 	DeleteCriticalSection(&controller->DsCs);
-
-	// Remove the DuoController device and its HID child from the system
 	return RemoveDuoControllerDevice(controller->DsInstanceId, controller->DsHidInstanceId);
 }
 
-/// <summary>
-/// Sends a DualSense input report.
-/// </summary>
-/// <param name="controller">The DuoController</param>
-/// <param name="inputReport">The DualSense input report</param>
-/// <returns>Result</returns>
-static HRESULT SendDsReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REPORT_DS* inputReport)
+static HRESULT SendDsReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REPORT_DUALSENSE* inputReport)
 {
 #pragma warning(suppress:4366)
 	EnterCriticalSection(&controller->DsCs);
@@ -1289,42 +750,329 @@ static HRESULT SendDsReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REP
 	inputReport->SensorTimestamp = inputReport->DeviceTimeStamp;
 	HRESULT result = DsSendRawInput(controller, inputReport);
 	if (SUCCEEDED(result))
-	{
 		controller->LastDsInputReport = *inputReport;
-	}
 #pragma warning(suppress:4366)
 	LeaveCriticalSection(&controller->DsCs);
 	return result;
 }
 
-/// <summary>
-/// Initializes the DuoController library.
-/// </summary>
-/// <returns>Result</returns>
+// ==================== DualShock 4 shared memory helpers ====================
+
+static HRESULT Ds4ConnectInput(DUO_CONTROLLER* controller)
+{
+	WCHAR sanitized[256];
+	SanitizeInstanceIdForPipeName(controller->Ds4InstanceId, sanitized, ARRAYSIZE(sanitized));
+	WCHAR mappingName[512];
+	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_input", sanitized);
+	WCHAR eventName[512];
+	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_input_event", sanitized);
+	DWORD startTime = GetTickCount();
+	HANDLE hMapping = NULL;
+	while (GetTickCount() - startTime < 1000)
+	{
+		hMapping = OpenFileMappingW(FILE_MAP_WRITE, FALSE, mappingName);
+		if (hMapping != NULL)
+			break;
+		Sleep(10);
+	}
+	if (hMapping == NULL)
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+	LPVOID view = MapViewOfFile(hMapping, FILE_MAP_WRITE, 0, 0, 0);
+	if (view == NULL)
+	{
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	HANDLE hEvent = OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName);
+	if (hEvent == NULL)
+	{
+		UnmapViewOfFile(view);
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	controller->Ds4InputMapping = hMapping;
+	controller->Ds4InputView = view;
+	controller->Ds4InputEvent = hEvent;
+	return S_OK;
+}
+
+static DWORD WINAPI Ds4FfbThreadProc(LPVOID param)
+{
+	DUO_CONTROLLER* controller = (DUO_CONTROLLER*)param;
+	HANDLE waitHandles[2] = { controller->Ds4FfbStopEvent, controller->Ds4OutputEvent };
+	while (1)
+	{
+		DWORD wr = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+		if (wr == WAIT_OBJECT_0)
+			break;
+		if (wr == WAIT_OBJECT_0 + 1)
+		{
+			BYTE* outputMem = (BYTE*)controller->Ds4OutputView;
+			DUO_CONTROLLER_FORCE_FEEDBACK_REPORT ffReport;
+			ZeroMemory(&ffReport, sizeof(ffReport));
+			ffReport.Flags = SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_RIGHT_MOTOR_VALID |
+				SYNTHETIC_CONTROLLER_OUTPUT_REPORT_FLAG_LEFT_MOTOR_VALID;
+			ffReport.LeftMotor = outputMem[4];
+			ffReport.RightMotor = outputMem[5];
+#pragma warning(suppress:4366)
+			EnterCriticalSection(&controller->Ds4Cs);
+			DuoController_VibrationReportCallback_t callback = controller->VibrationReportCallback;
+			void* context = controller->VibrationReportCallbackContext;
+#pragma warning(suppress:4366)
+			LeaveCriticalSection(&controller->Ds4Cs);
+			if (callback != NULL)
+				callback(controller, &ffReport, context);
+		}
+	}
+	return 0;
+}
+
+static HRESULT Ds4ConnectFfb(DUO_CONTROLLER* controller)
+{
+	WCHAR sanitized[256];
+	SanitizeInstanceIdForPipeName(controller->Ds4InstanceId, sanitized, ARRAYSIZE(sanitized));
+	WCHAR mappingName[512];
+	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_output", sanitized);
+	WCHAR eventName[512];
+	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_output_event", sanitized);
+	DWORD startTime = GetTickCount();
+	HANDLE hMapping = NULL;
+	while (GetTickCount() - startTime < 1000)
+	{
+		hMapping = OpenFileMappingW(FILE_MAP_READ, FALSE, mappingName);
+		if (hMapping != NULL)
+			break;
+		Sleep(10);
+	}
+	if (hMapping == NULL)
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+	LPVOID view = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
+	if (view == NULL)
+	{
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	HANDLE hEvent = OpenEventW(SYNCHRONIZE, FALSE, eventName);
+	if (hEvent == NULL)
+	{
+		UnmapViewOfFile(view);
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	controller->Ds4OutputMapping = hMapping;
+	controller->Ds4OutputView = view;
+	controller->Ds4OutputEvent = hEvent;
+	controller->Ds4FfbStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (!controller->Ds4FfbStopEvent)
+	{
+		CloseHandle(hEvent);
+		UnmapViewOfFile(view);
+		CloseHandle(hMapping);
+		controller->Ds4OutputEvent = NULL;
+		controller->Ds4OutputView = NULL;
+		controller->Ds4OutputMapping = NULL;
+		return HRESULT_FROM_WIN32(GetLastError());
+	}
+	controller->Ds4FfbThread = CreateThread(NULL, 0, Ds4FfbThreadProc, controller, 0, NULL);
+	if (!controller->Ds4FfbThread)
+	{
+		CloseHandle(controller->Ds4FfbStopEvent);
+		controller->Ds4FfbStopEvent = NULL;
+		CloseHandle(hEvent);
+		controller->Ds4OutputEvent = NULL;
+		UnmapViewOfFile(view);
+		controller->Ds4OutputView = NULL;
+		CloseHandle(hMapping);
+		controller->Ds4OutputMapping = NULL;
+		return HRESULT_FROM_WIN32(GetLastError());
+	}
+	return S_OK;
+}
+
+static void Ds4DisconnectInput(DUO_CONTROLLER* controller)
+{
+	if (controller->Ds4InputEvent != NULL)
+	{
+		CloseHandle(controller->Ds4InputEvent);
+		controller->Ds4InputEvent = NULL;
+	}
+	if (controller->Ds4InputView != NULL)
+	{
+		UnmapViewOfFile(controller->Ds4InputView);
+		controller->Ds4InputView = NULL;
+	}
+	if (controller->Ds4InputMapping != NULL)
+	{
+		CloseHandle(controller->Ds4InputMapping);
+		controller->Ds4InputMapping = NULL;
+	}
+}
+
+static void Ds4DisconnectFfb(DUO_CONTROLLER* controller)
+{
+	if (controller->Ds4FfbStopEvent != NULL)
+	{
+		SetEvent(controller->Ds4FfbStopEvent);
+		if (controller->Ds4FfbThread != NULL)
+		{
+			WaitForSingleObject(controller->Ds4FfbThread, 1000);
+			CloseHandle(controller->Ds4FfbThread);
+			controller->Ds4FfbThread = NULL;
+		}
+		CloseHandle(controller->Ds4FfbStopEvent);
+		controller->Ds4FfbStopEvent = NULL;
+	}
+	if (controller->Ds4OutputEvent != NULL)
+	{
+		CloseHandle(controller->Ds4OutputEvent);
+		controller->Ds4OutputEvent = NULL;
+	}
+	if (controller->Ds4OutputView != NULL)
+	{
+		UnmapViewOfFile(controller->Ds4OutputView);
+		controller->Ds4OutputView = NULL;
+	}
+	if (controller->Ds4OutputMapping != NULL)
+	{
+		CloseHandle(controller->Ds4OutputMapping);
+		controller->Ds4OutputMapping = NULL;
+	}
+}
+
+static HRESULT Ds4SendRawInput(DUO_CONTROLLER* controller, const DUO_CONTROLLER_INPUT_REPORT_DS4* state)
+{
+	if (controller->Ds4InputView == NULL)
+		return HRESULT_FROM_WIN32(ERROR_PIPE_NOT_CONNECTED);
+	BYTE report[DS4_REPORT_SIZE];
+	ZeroMemory(report, DS4_REPORT_SIZE);
+	report[0] = DS4_INPUT_REPORT_ID;
+	report[1] = state->LeftStickHorizontal;
+	report[2] = state->LeftStickVertical;
+	report[3] = state->RightStickHorizontal;
+	report[4] = state->RightStickVertical;
+	report[5] = (state->DPad & 0x0F);
+	if (state->Square)   report[5] |= 0x10;
+	if (state->Cross)    report[5] |= 0x20;
+	if (state->Circle)   report[5] |= 0x40;
+	if (state->Triangle) report[5] |= 0x80;
+	if (state->L1)        report[6] |= 0x01;
+	if (state->R1)        report[6] |= 0x02;
+	if (state->L2)        report[6] |= 0x04;
+	if (state->R2)        report[6] |= 0x08;
+	if (state->Share)     report[6] |= 0x10;
+	if (state->Options)   report[6] |= 0x20;
+	if (state->L3)        report[6] |= 0x40;
+	if (state->R3)        report[6] |= 0x80;
+	if (state->PS)        report[7] |= 0x01;
+	if (state->Touchpad)  report[7] |= 0x02;
+	report[8] = state->LeftTrigger;
+	report[9] = state->RightTrigger;
+	report[12] = 0xFF;
+	memcpy(&report[13], &state->AngularVelocityX, sizeof(INT16));
+	memcpy(&report[15], &state->AngularVelocityY, sizeof(INT16));
+	memcpy(&report[17], &state->AngularVelocityZ, sizeof(INT16));
+	memcpy(&report[19], &state->AccelerometerX, sizeof(INT16));
+	memcpy(&report[21], &state->AccelerometerY, sizeof(INT16));
+	memcpy(&report[23], &state->AccelerometerZ, sizeof(INT16));
+	report[30] = 0x1A;
+	report[35] = state->TouchData.Finger[0].NotTouching ? 0xFF : (BYTE)state->TouchData.Finger[0].Index;
+	USHORT t1x = min(state->TouchData.Finger[0].FingerX, DS4_TOUCHPAD_MAX_X) & 0xFFF;
+	USHORT t1y = min(state->TouchData.Finger[0].FingerY, DS4_TOUCHPAD_MAX_Y) & 0xFFF;
+	UINT t1 = ((UINT)t1y << 12) | t1x;
+	report[36] = (BYTE)(t1 & 0xFF);
+	report[37] = (BYTE)((t1 >> 8) & 0xFF);
+	report[38] = (BYTE)((t1 >> 16) & 0xFF);
+	report[39] = state->TouchData.Finger[1].NotTouching ? 0xFF : (BYTE)state->TouchData.Finger[1].Index;
+	USHORT t2x = min(state->TouchData.Finger[1].FingerX, DS4_TOUCHPAD_MAX_X) & 0xFFF;
+	USHORT t2y = min(state->TouchData.Finger[1].FingerY, DS4_TOUCHPAD_MAX_Y) & 0xFFF;
+	UINT t2 = ((UINT)t2y << 12) | t2x;
+	report[40] = (BYTE)(t2 & 0xFF);
+	report[41] = (BYTE)((t2 >> 8) & 0xFF);
+	report[42] = (BYTE)((t2 >> 16) & 0xFF);
+	BYTE* inputMem = (BYTE*)controller->Ds4InputView;
+	inputMem[0] = DS4_INPUT_REPORT_FULL;
+	inputMem[1] = DS4_REPORT_SIZE;
+	memcpy(&inputMem[MESSAGE_HEADER_LEN], report, DS4_REPORT_SIZE);
+	if (!SetEvent(controller->Ds4InputEvent))
+		return DsWin32ErrorToHresult(GetLastError());
+	return S_OK;
+}
+
+static HRESULT CreateDualShock4Controller(DUO_CONTROLLER* controller)
+{
+	WCHAR instanceId[256];
+	WCHAR hidInstanceId[256];
+	HRESULT result = InstallDuoControllerDevice(L"Root\\VID_054C&PID_05C4", L"VID_054C&PID_05C4&DUOCONTROLLER", instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
+	if (FAILED(result))
+		return result;
+	wcscpy_s(controller->Ds4InstanceId, ARRAYSIZE(controller->Ds4InstanceId), instanceId);
+	wcscpy_s(controller->Ds4HidInstanceId, ARRAYSIZE(controller->Ds4HidInstanceId), hidInstanceId);
+	controller->Ds4InputMapping = NULL;
+	controller->Ds4OutputMapping = NULL;
+	controller->Ds4InputView = NULL;
+	controller->Ds4OutputView = NULL;
+	controller->Ds4InputEvent = NULL;
+	controller->Ds4OutputEvent = NULL;
+	controller->Ds4FfbThread = NULL;
+	controller->Ds4FfbStopEvent = NULL;
+#pragma warning(suppress:4366)
+	InitializeCriticalSection(&controller->Ds4Cs);
+	result = Ds4ConnectInput(controller);
+	if (FAILED(result))
+	{
+#pragma warning(suppress:4366)
+		DeleteCriticalSection(&controller->Ds4Cs);
+		return result;
+	}
+	result = Ds4ConnectFfb(controller);
+	if (FAILED(result))
+	{
+		Ds4DisconnectInput(controller);
+#pragma warning(suppress:4366)
+		DeleteCriticalSection(&controller->Ds4Cs);
+		return result;
+	}
+	return S_OK;
+}
+
+static HRESULT RemoveDualShock4Controller(DUO_CONTROLLER* controller)
+{
+	Ds4DisconnectFfb(controller);
+	Ds4DisconnectInput(controller);
+#pragma warning(suppress:4366)
+	DeleteCriticalSection(&controller->Ds4Cs);
+	return RemoveDuoControllerDevice(controller->Ds4InstanceId, controller->Ds4HidInstanceId);
+}
+
+static HRESULT SendDs4Report(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REPORT_DS4* inputReport)
+{
+#pragma warning(suppress:4366)
+	EnterCriticalSection(&controller->Ds4Cs);
+	HRESULT result = Ds4SendRawInput(controller, inputReport);
+	if (SUCCEEDED(result))
+		controller->LastDs4InputReport = *inputReport;
+#pragma warning(suppress:4366)
+	LeaveCriticalSection(&controller->Ds4Cs);
+	return result;
+}
+
+// ==================== Exported API ====================
+
 HRESULT WINAPI DuoController_Initialize()
 {
-	// The result
 	HRESULT result = S_OK;
-
-	// Initialize the Windows Runtime for the current thread
 	InitializeWindowsRuntimeForCurrentThread();
-
-	// We haven't been initialized yet
 	if (!Initialized)
 	{
-		// Load xboxgipsynthetic.dll or increment its load counter
 		HMODULE xboxgipsynthetic = NULL;
 		if ((GetModuleHandleExW(0, L"xboxgipsynthetic.dll", &xboxgipsynthetic) && xboxgipsynthetic != NULL) || (xboxgipsynthetic = LoadLibraryExW(L"xboxgipsynthetic.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL)
 		{
-			// Load cfgmgr32.dll or increment its load counter
 			HMODULE cfgmgr32 = NULL;
 			if ((GetModuleHandleExW(0, L"cfgmgr32.dll", &cfgmgr32) && cfgmgr32 != NULL) || (cfgmgr32 = LoadLibraryExW(L"cfgmgr32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL)
 			{
-				// Load ntdll.dll or increment its load counter
 				HMODULE ntdll = NULL;
 				if ((GetModuleHandleExW(0, L"ntdll.dll", &ntdll) && ntdll != NULL) || (ntdll = LoadLibraryExW(L"ntdll.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL)
 				{
-					// Import the required functions
 					SyntheticController_CreateController = (SyntheticController_CreateController_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_CreateController");
 					SyntheticController_SetTargetProcess = (SyntheticController_SetTargetProcess_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_SetTargetProcess");
 					SyntheticController_RegisterReportCallback = (SyntheticController_RegisterReportCallback_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_RegisterReportCallback");
@@ -1336,8 +1084,6 @@ HRESULT WINAPI DuoController_Initialize()
 					SyntheticController_GetDeviceId = (SyntheticController_GetDeviceId_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_GetDeviceId");
 					DevSetObjectProperties = (DevSetObjectProperties_t)GetProcAddress(cfgmgr32, "DevSetObjectProperties");
 					RtlPublishWnfStateData = (RtlPublishWnfStateData_t)GetProcAddress(ntdll, "RtlPublishWnfStateData");
-
-					// We managed to import the required functions
 					if (SyntheticController_CreateController != NULL &&
 						SyntheticController_SetTargetProcess != NULL &&
 						SyntheticController_RegisterReportCallback &&
@@ -1349,24 +1095,15 @@ HRESULT WINAPI DuoController_Initialize()
 						SyntheticController_GetDeviceId != NULL &&
 						DevSetObjectProperties != NULL)
 					{
-						// Mark ourselves as initialized
 						Initialized = TRUE;
 					}
-
-					// We couldn't import the required SyntheticController_* functions
 					else
 					{
-						// Set the result
 						result = E_NOINTERFACE;
 					}
-
-					// Something went wrong
 					if (result != S_OK)
 					{
-						// Decrement the load counter of xboxgipsynthetic.dll
 						FreeLibrary(xboxgipsynthetic);
-
-						// Clear the imported functions
 						SyntheticController_CreateController = NULL;
 						SyntheticController_SetTargetProcess = NULL;
 						SyntheticController_RegisterReportCallback = NULL;
@@ -1378,588 +1115,295 @@ HRESULT WINAPI DuoController_Initialize()
 						SyntheticController_GetDeviceId = NULL;
 					}
 				}
-
-				// We couldn't load ntdll.dll
 				else
 				{
-					// Set the result
 					result = HRESULT_FROM_WIN32(GetLastError());
 				}
 			}
-
-			// We couldn't load cfgmgr32.dll
 			else
 			{
-				// Set the result
 				result = HRESULT_FROM_WIN32(GetLastError());
 			}
 		}
-
-		// We couldn't load xboxgipsynthetic.dll
 		else
 		{
-			// Set the result
 			result = HRESULT_FROM_WIN32(GetLastError());
 		}
 	}
-
-	// Return the result
 	return result;
 }
 
-/// <summary>
-/// Uninitializes the DuoController library.
-/// </summary>
-/// <returns>Result</returns>
 HRESULT WINAPI DuoController_Uninitialize()
 {
-	// The result
 	HRESULT result = S_OK;
-
-	// Initialize the Windows Runtime for the current thread
 	InitializeWindowsRuntimeForCurrentThread();
-
-	// We're initialized
 	if (Initialized)
 	{
-		// Iterate all created controllers
 		while (Controllers != NULL)
 		{
-			// Remove the controller
 			DuoController_RemoveController(Controllers[0]);
 		}
-
-		// Get the xboxgipsynthetic.dll module handle (without incrementing its load counter)
 		HMODULE xboxgipsynthetic = NULL;
 		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, L"xboxgipsynthetic.dll", &xboxgipsynthetic) && xboxgipsynthetic != NULL)
-		{
-			// Decrement the load counter of xboxgipsynthetic.dll
 			FreeLibrary(xboxgipsynthetic);
-		}
-
-		// Get the cfgmgr32.dll module handle (without incrementing its load counter)
 		HMODULE cfgmgr32 = NULL;
 		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, L"cfgmgr32.dll", &cfgmgr32) && cfgmgr32 != NULL)
-		{
-			// Decrement the load counter of cfgmgr32.dll
 			FreeLibrary(cfgmgr32);
-		}
-
-		// Mark ourselves as uninitialized
 		Initialized = FALSE;
 	}
-
-	// We aren't initialized
 	else
 	{
-		// Set the result
 		result = E_UNEXPECTED;
 	}
-
-	// Return the result
 	return result;
 }
 
-/// <summary>
-/// Creates a new Duo controller.
-/// </summary>
-/// <param name="controllerType">The type of controller to create</param>
-/// <param name="vibrationCallback">The vibration report callback</param>
-/// <param name="vibrationCallbackContext">The vibration callback context</param>
-/// <param name="controller">Receives the created controller</param>
-/// <returns>Result</returns>
 HRESULT WINAPI DuoController_CreateController(DUO_CONTROLLER_TYPE controllerType, DuoController_VibrationReportCallback_t vibrationCallback, void* vibrationCallbackContext, void** controller)
 {
-	// The result
 	HRESULT result = S_OK;
-
-	// Initialize the Windows Runtime for the current thread
 	InitializeWindowsRuntimeForCurrentThread();
-
-	// We're initialized
 	if (Initialized)
 	{
-		// We've been given a valid controller output pointer
 		if (controller != NULL)
 		{
-			// Allocate the controller structure
 			DUO_CONTROLLER* newController = (DUO_CONTROLLER*)malloc(sizeof(DUO_CONTROLLER));
-			
-			// We managed to allocate the controller structure
 			if (newController != NULL)
 			{
-				// Initialize the controller structure
 				memset(newController, 0, sizeof(DUO_CONTROLLER));
-
-				// Set the controller type
 				newController->Type = controllerType;
-
-				// Assign the vibration report callback
 				newController->VibrationReportCallback = vibrationCallback;
-
-				// Assign the vibration report callback context
 				newController->VibrationReportCallbackContext = vibrationCallbackContext;
-
-				// Initialize type-specific state
 				if (controllerType == DuoControllerTypeXbox)
 				{
-					// Initialize Xbox-specific state
 					newController->SyntheticHandle = NULL;
 					newController->DeviceQuery = NULL;
 					ZeroMemory(&newController->LastXboxInputReport, sizeof(newController->LastXboxInputReport));
-
-					// Create the synthetic controller
 #pragma warning(suppress:4366)
 					if ((result = SyntheticController_CreateController(SyntheticControllerTypeExtendedGamepad, &newController->SyntheticHandle)) == S_OK)
 					{
-						// The device ID
 						unsigned long long deviceId = 0;
-
-						// Get the device ID
 						if (SyntheticController_GetDeviceId(newController->SyntheticHandle, &deviceId) == S_OK)
 						{
-							// The device ID suffix buffer size
 							DWORD deviceIdSuffixBufferSize = 128;
-
-							// Allocate a suitably sized buffer for the device ID suffix
 							WCHAR* deviceIdSuffix = (WCHAR*)malloc(deviceIdSuffixBufferSize * sizeof(WCHAR));
-
-							// We managed to allocate a suitably sized device ID buffer
 							if (deviceIdSuffix != NULL)
 							{
-								// Build the device ID suffix (the trailing part of ex. USB\VID_045E&PID_02FF&IG_00\08&00&00008A8ADD9C3C60)
 								swprintf_s(deviceIdSuffix, deviceIdSuffixBufferSize, L"&%016llX", deviceId);
-
-								// Build the device query filter
 								DEVPROP_FILTER_EXPRESSION ObjectFilter[] =
 								{
-									{
-										DEVPROP_OPERATOR_OR_OPEN
-									},
-									{
-										DEVPROP_OPERATOR_ENDS_WITH_IGNORE_CASE,
-										{
-											{ DEVPKEY_Device_InstanceId, DEVPROP_STORE_SYSTEM, NULL },
-											DEVPROP_TYPE_STRING,
-											((ULONG)wcslen(deviceIdSuffix) + 1) * sizeof(WCHAR),
-											(BYTE*)deviceIdSuffix
-										}
-									},
-									{
-										DEVPROP_OPERATOR_ENDS_WITH_IGNORE_CASE,
-										{
-											{ DEVPKEY_Device_Parent, DEVPROP_STORE_SYSTEM, NULL },
-											DEVPROP_TYPE_STRING,
-											((ULONG)wcslen(deviceIdSuffix) + 1) * sizeof(WCHAR),
-											(BYTE*)deviceIdSuffix
-										}
-									},
-									{
-										DEVPROP_OPERATOR_OR_CLOSE
-									}
+									{ DEVPROP_OPERATOR_OR_OPEN },
+									{ DEVPROP_OPERATOR_ENDS_WITH_IGNORE_CASE, { { DEVPKEY_Device_InstanceId, DEVPROP_STORE_SYSTEM, NULL }, DEVPROP_TYPE_STRING, ((ULONG)wcslen(deviceIdSuffix) + 1) * sizeof(WCHAR), (BYTE*)deviceIdSuffix } },
+									{ DEVPROP_OPERATOR_ENDS_WITH_IGNORE_CASE, { { DEVPKEY_Device_Parent, DEVPROP_STORE_SYSTEM, NULL }, DEVPROP_TYPE_STRING, ((ULONG)wcslen(deviceIdSuffix) + 1) * sizeof(WCHAR), (BYTE*)deviceIdSuffix } },
+									{ DEVPROP_OPERATOR_OR_CLOSE }
 								};
-
-								// Create the device query
 #pragma warning(suppress:4366)
 								if ((result = DevCreateObjectQuery(DevObjectTypeDevice, DevQueryFlagUpdateResults, 0, NULL, ARRAYSIZE(ObjectFilter), ObjectFilter, DuoController_DeviceChanged, NULL, &newController->DeviceQuery)) == S_OK)
 								{
-									// Register the output report callback
 									if ((result = SyntheticController_RegisterReportCallback(newController->SyntheticHandle, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER, DuoController_OutputReportReceived, newController)) == S_OK)
 									{
-										// Connect the controller to the system
 										if ((result = SyntheticController_Connect(newController->SyntheticHandle)) == S_OK)
 										{
-											// Extend the controllers array
 											DUO_CONTROLLER** newControllers = (DUO_CONTROLLER**)realloc(Controllers, sizeof(DUO_CONTROLLER*) * (ControllerCount + 1));
-
-											// We managed to extend the controllers array
 											if (newControllers)
 											{
-												// Update the controllers array pointer
 												Controllers = newControllers;
-
-												// Store the created controller and increase the count
 												Controllers[ControllerCount++] = newController;
-
-												// Return the created controller
 												*controller = newController;
-
-												// Wait a second
 												Sleep(1000);
-
-												// Re-send the last controller input report
 												DuoController_SendReport(newController, &newController->LastXboxInputReport);
 											}
-
-											// We failed to extend the controllers array
 											else
 											{
-												// Set the result
 												result = E_OUTOFMEMORY;
 											}
-
-											// Something went wrong
 											if (result != S_OK)
-											{
-												// Disconnect the controller
 												SyntheticController_Disconnect(newController->SyntheticHandle);
-											}
 										}
-
-										// Something went wrong
 										if (result != S_OK)
-										{
-											// Unregister the output report callback
 											SyntheticController_UnregisterReportCallback(newController->SyntheticHandle, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER);
-										}
 									}
-
-									// Something went wrong
 									if (result != S_OK)
-									{
-										// Close the device query
 										DevCloseObjectQuery(newController->DeviceQuery);
-									}
 								}
-
-								// Free the device ID suffix buffer
 								free(deviceIdSuffix);
 							}
 						}
-
-						// Something went wrong
 						if (result != S_OK)
-						{
-							// Remove the created controller
 							SyntheticController_RemoveController(newController->SyntheticHandle);
-						}
 					}
 				}
-				else if (controllerType == DuoControllerTypeDs)
+				else if (controllerType == DuoControllerTypeDualShock4)
 				{
-					// Create the DualSense controller
-					result = CreateDsController(newController);
-
-					// We created the DualSense controller successfully
+					result = CreateDualShock4Controller(newController);
 					if (SUCCEEDED(result))
 					{
-						// Extend the controllers array
 						DUO_CONTROLLER** newControllers = (DUO_CONTROLLER**)realloc(Controllers, sizeof(DUO_CONTROLLER*) * (ControllerCount + 1));
-
-						// We managed to extend the controllers array
 						if (newControllers)
 						{
-							// Update the controllers array pointer
 							Controllers = newControllers;
-
-							// Store the created controller and increase the count
 							Controllers[ControllerCount++] = newController;
-
-							// Return the created controller
 							*controller = newController;
 						}
-
-						// We failed to extend the controllers array
 						else
 						{
-							// Clean up the DualSense controller
-							RemoveDsController(newController);
-
-							// Set the result
+							RemoveDualShock4Controller(newController);
 							result = E_OUTOFMEMORY;
 						}
 					}
 				}
-
-				// Invalid controller type
+				else if (controllerType == DuoControllerTypeDualSense || controllerType == DuoControllerTypeDualSenseEdge)
+				{
+					USHORT pid = (controllerType == DuoControllerTypeDualSense) ? 0x0CE6 : 0x0DF2;
+					result = CreateDualSenseController(newController, pid);
+					if (SUCCEEDED(result))
+					{
+						DUO_CONTROLLER** newControllers = (DUO_CONTROLLER**)realloc(Controllers, sizeof(DUO_CONTROLLER*) * (ControllerCount + 1));
+						if (newControllers)
+						{
+							Controllers = newControllers;
+							Controllers[ControllerCount++] = newController;
+							*controller = newController;
+						}
+						else
+						{
+							RemoveDualSenseController(newController);
+							result = E_OUTOFMEMORY;
+						}
+					}
+				}
 				else
 				{
 					result = E_INVALIDARG;
 				}
-
-				// Something went wrong
 				if (result != S_OK)
 				{
-					// Free the controller structure
 					free(newController);
 				}
 			}
-
-			// We failed to allocate the controller structure
 			else
 			{
-				// Set the result
 				return E_OUTOFMEMORY;
 			}
 		}
-
-		// We've been given an invalid controller output pointer
 		else
 		{
-			// Set the result
 			result = E_INVALIDARG;
 		}
 	}
-
-	// We aren't initialized
 	else
 	{
-		// Set the result
 		result = E_UNEXPECTED;
 	}
-
-	// Return the result
 	return result;
 }
 
-/// <summary>
-/// Removes a Duo controller.
-/// </summary>
-/// <param name="controller">The controller to remove</param>
-/// <returns>Result</returns>
 HRESULT WINAPI DuoController_RemoveController(void* controller)
 {
-	// The result
 	HRESULT result = S_OK;
-
-	// Initialize the Windows Runtime for the current thread
 	InitializeWindowsRuntimeForCurrentThread();
-
-	// We're initialized
 	if (Initialized)
 	{
-		// Cast the controller
 		DUO_CONTROLLER* duoController = (DUO_CONTROLLER*)controller;
-
-		// Assume the controller argument is invalid
 		result = E_INVALIDARG;
-
-		// Iterate the created controllers
 		for (DWORD i = 0; i < ControllerCount; i++)
 		{
-			// We've found the controller we need to remove
 			if (Controllers[i] == duoController)
 			{
-				// Iterate all trailing controllers
 				for (DWORD j = i; j < ControllerCount - 1; j++)
-				{
-					// Shift the controllers forward by one
 					Controllers[j] = Controllers[j + 1];
-				}
-
-				// Decrease the controller count
 				ControllerCount--;
-
-				// We have at least one controller left
 				if (ControllerCount > 0)
 				{
-					// Resize the controllers array
 					DUO_CONTROLLER** newControllers = (DUO_CONTROLLER**)realloc(Controllers, sizeof(DUO_CONTROLLER*) * ControllerCount);
-
-					// We managed to resize the controllers array
 					if (newControllers != NULL)
-					{
-						// Update the controllers array pointer
 						Controllers = newControllers;
-					}
 				}
-
-				// We have no controllers left
 				else
 				{
-					// Free the controllers array
 					free(Controllers);
-
-					// Clear the controllers array pointer
 					Controllers = NULL;
 				}
-
-				// Type-specific cleanup
 				if (duoController->Type == DuoControllerTypeXbox)
 				{
-					// Disconnect the controller
 					SyntheticController_Disconnect(duoController->SyntheticHandle);
-
-					// Unregister the output report callback
 					SyntheticController_UnregisterReportCallback(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER);
-
-					// Close the device query
 					DevCloseObjectQuery(duoController->DeviceQuery);
-
-					// Remove the controller
 					SyntheticController_RemoveController(duoController->SyntheticHandle);
 				}
-				else if (duoController->Type == DuoControllerTypeDs)
+				else if (duoController->Type == DuoControllerTypeDualSenseEdge || duoController->Type == DuoControllerTypeDualSense)
 				{
-					// Clean up the DualSense controller
-					RemoveDsController(duoController);
+					RemoveDualSenseController(duoController);
 				}
-
-				// Free the controller structure
+				else if (duoController->Type == DuoControllerTypeDualShock4)
+				{
+					RemoveDualShock4Controller(duoController);
+				}
 				free(duoController);
-
-				// Set the result
 				result = S_OK;
-
-				// We've removed the controller
 				break;
 			}
 		}
 	}
-
-	// We aren't initialized
 	else
 	{
-		// Set the result
 		result = E_UNEXPECTED;
 	}
-
-	// Return the result
 	return result;
 }
 
-/// <summary>
-/// Sends an input report to the given Duo controller.
-/// </summary>
-/// <param name="controller">The controller to send the input report to</param>
-/// <param name="inputReport">The input report to send</param>
-/// <returns>Result</returns>
-HRESULT WINAPI DuoController_SendReport(void* controller, DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED* inputReport)
+HRESULT WINAPI DuoController_SendReport(void* controller, void* inputReport)
 {
-	// The result
 	HRESULT result = S_OK;
-
-	// Initialize the Windows Runtime for the current thread
 	InitializeWindowsRuntimeForCurrentThread();
-
-	// We're initialized
 	if (Initialized)
 	{
-		// The arguments are valid
 		if (controller != NULL && inputReport != NULL)
 		{
-			// Cast the controller
 			DUO_CONTROLLER* duoController = (DUO_CONTROLLER*)controller;
-
-			// Only Xbox controllers are supported by this function
 			if (duoController->Type == DuoControllerTypeXbox)
 			{
-				// Send the input report
-				if ((result = SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_EXTENDED_CONTROLLER, inputReport, sizeof(DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED))) == S_OK)
+				DUO_CONTROLLER_INPUT_REPORT_XBOX* xboxReport = (DUO_CONTROLLER_INPUT_REPORT_XBOX*)inputReport;
+				if ((result = SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_EXTENDED_CONTROLLER, xboxReport, sizeof(DUO_CONTROLLER_INPUT_REPORT_XBOX))) == S_OK)
 				{
-					// Create a VKEY input report for the Guide button
 					SYNTHETIC_CONTROLLER_VKEY_INPUT_REPORT guideButtonInputReport;
-
-					// Initialize the VKEY input report
 					memset(&guideButtonInputReport, 0, sizeof(guideButtonInputReport));
-
-					// Set the Guide button state
-					guideButtonInputReport.State = inputReport->BaseReport.Guide;
-
-					// Send the VKEY input report for the Guide button (not mission critical)
+					guideButtonInputReport.State = xboxReport->Guide;
 					SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_VKEY, &guideButtonInputReport, sizeof(guideButtonInputReport));
-
-					// Update the last controller input report
-					duoController->LastXboxInputReport = *inputReport;
+					duoController->LastXboxInputReport = *xboxReport;
 				}
 			}
-
-			// Wrong report type for this controller
+			else if (duoController->Type == DuoControllerTypeDualSenseEdge || duoController->Type == DuoControllerTypeDualSense)
+			{
+				result = SendDsReport(duoController, (DUO_CONTROLLER_INPUT_REPORT_DUALSENSE*)inputReport);
+			}
+			else if (duoController->Type == DuoControllerTypeDualShock4)
+			{
+				result = SendDs4Report(duoController, (DUO_CONTROLLER_INPUT_REPORT_DS4*)inputReport);
+			}
 			else
 			{
 				result = E_INVALIDARG;
 			}
 		}
-
-		// The arguments are invalid
-		else
-		{
-			// Set the result
-			result = E_INVALIDARG;
-		}
-	}
-
-	// We aren't initialized
-	else
-	{
-		// Set the result
-		result = E_UNEXPECTED;
-	}
-
-	// Return the result
-	return result;
-}
-
-/// <summary>
-/// Sends a DualSense input report to the given Duo controller.
-/// </summary>
-/// <param name="controller">The controller to send the input report to</param>
-/// <param name="inputReport">The DualSense input report to send</param>
-/// <returns>Result</returns>
-HRESULT WINAPI DuoController_SendReportDs(void* controller, DUO_CONTROLLER_INPUT_REPORT_DS* inputReport)
-{
-	// The result
-	HRESULT result = S_OK;
-
-	// We're initialized
-	if (Initialized)
-	{
-		// The arguments are valid
-		if (controller != NULL && inputReport != NULL)
-		{
-			// Cast the controller
-			DUO_CONTROLLER* duoController = (DUO_CONTROLLER*)controller;
-
-			// Only DualSense controllers are supported by this function
-			if (duoController->Type == DuoControllerTypeDs)
-			{
-				// Send the DualSense input report
-				result = SendDsReport(duoController, inputReport);
-			}
-
-			// Wrong report type for this controller
-			else
-			{
-				result = E_INVALIDARG;
-			}
-		}
-
-		// The arguments are invalid
 		else
 		{
 			result = E_INVALIDARG;
 		}
 	}
-
-	// We aren't initialized
 	else
 	{
 		result = E_UNEXPECTED;
 	}
-
 	return result;
 }
 
-/// <summary>
-/// The library entry point.
-/// </summary>
-/// <param name="hModule">Module handle</param>
-/// <param name="ul_reason_for_call">Event type</param>
-/// <param name="lpReserved">Reserved</param>
-/// <returns>Result</returns>
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
-	// Unreferenced parameters
 	(void)hModule;
 	(void)lpReserved;
-
-	// We're attaching to the process
 	if (ul_reason_for_call == DLL_PROCESS_ATTACH)
 	{
-		// Get our session ID
 		ProcessIdToSessionId(GetCurrentProcessId(), &SessionId);
 	}
-
-	// Return success
 	return TRUE;
 }

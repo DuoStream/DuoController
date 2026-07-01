@@ -17,4 +17,7 @@ EXTERN_C_START
 // Sets the DualSense input report to default (neutral) values.
 VOID SetDefaultDsReport(_Out_ PUCHAR Report);
 
+// Sets the DualShock 4 input report to default (neutral) values.
+VOID SetDefaultDs4Report(_Out_ PUCHAR Report);
+
 EXTERN_C_END

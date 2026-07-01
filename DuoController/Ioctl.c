@@ -122,8 +122,8 @@ NTSTATUS ReadReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request, _
 
 /// <summary>
 /// Handles IOCTL_HID_WRITE_REPORT for the HID collection. Extracts the HID transfer
-/// packet, validates the buffer size, stores the DualSense output report, and writes the
-/// response to the shared memory output client.
+/// packet, validates the buffer size, stores the output report (DS or DS4), and writes
+/// the response to the shared memory output client.
 /// </summary>
 /// <param name="QueueContext">The object context associated with the queue.</param>
 /// <param name="Request">Handle to a framework request object.</param>
@@ -152,7 +152,7 @@ NTSTATUS WriteReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 		return status;
 	}
 
-	// Store the DualSense output report
+	// Store the output report (DS 47-byte or DS4 31-byte)
 	if (packet.reportBufferLen >= sizeof(DS_OUTPUT_REPORT))
 	{
 		RtlCopyMemory(
@@ -636,26 +636,44 @@ NTSTATUS GetStringId(_In_ WDFREQUEST Request, _Out_ ULONG* StringId, _Out_ ULONG
 /// Handles IOCTL_HID_GET_INDEXED_STRING for the HID collection.
 /// </summary>
 /// <param name="Request">Pointer to the request packet.</param>
+/// <param name="DeviceContext">Pointer to the device context.</param>
 /// <returns>NTSTATUS</returns>
-NTSTATUS GetIndexedString(_In_ WDFREQUEST Request)
+NTSTATUS GetIndexedString(_In_ WDFREQUEST Request, _In_ PDEVICE_CONTEXT DeviceContext)
 {
 	NTSTATUS status;
 	ULONG languageId, stringIndex;
 
 	status = GetStringId(Request, &stringIndex, &languageId);
 
-	// While we don't use the language id, some minidrivers might.
 	UNREFERENCED_PARAMETER(languageId);
 
 	if (NT_SUCCESS(status))
 	{
+		PWSTR productString;
+		size_t productStringSize;
+
 		switch (stringIndex)
 		{
 		case HID_DEVICE_MANUFACTURER_STRING_INDEX:
 			status = RequestCopyFromBuffer(Request, HID_DEVICE_MANUFACTURER_STRING, sizeof(HID_DEVICE_MANUFACTURER_STRING));
 			break;
 		case HID_DEVICE_PRODUCT_STRING_INDEX:
-			status = RequestCopyFromBuffer(Request, HID_DEVICE_PRODUCT_STRING, sizeof(HID_DEVICE_PRODUCT_STRING));
+			if (DeviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
+			{
+				productString = HID_DEVICE_PRODUCT_STRING_DS4;
+				productStringSize = sizeof(HID_DEVICE_PRODUCT_STRING_DS4);
+			}
+			else if (DeviceContext->HidDeviceAttributes.ProductID == 0x0CE6)
+			{
+				productString = HID_DEVICE_PRODUCT_STRING_DUALSENSE;
+				productStringSize = sizeof(HID_DEVICE_PRODUCT_STRING_DUALSENSE);
+			}
+			else
+			{
+				productString = HID_DEVICE_PRODUCT_STRING;
+				productStringSize = sizeof(HID_DEVICE_PRODUCT_STRING);
+			}
+			status = RequestCopyFromBuffer(Request, productString, productStringSize);
 			break;
 		default:
 			status = STATUS_INVALID_PARAMETER;
@@ -697,8 +715,21 @@ NTSTATUS GetString(_In_ WDFREQUEST Request, _In_ PDEVICE_CONTEXT DeviceContext)
 		string = HID_DEVICE_MANUFACTURER_STRING;
 		break;
 	case HID_STRING_ID_IPRODUCT:
-		stringSizeCb = sizeof(HID_DEVICE_PRODUCT_STRING);
-		string = HID_DEVICE_PRODUCT_STRING;
+		if (DeviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
+		{
+			stringSizeCb = sizeof(HID_DEVICE_PRODUCT_STRING_DS4);
+			string = HID_DEVICE_PRODUCT_STRING_DS4;
+		}
+		else if (DeviceContext->HidDeviceAttributes.ProductID == 0x0CE6)
+		{
+			stringSizeCb = sizeof(HID_DEVICE_PRODUCT_STRING_DUALSENSE);
+			string = HID_DEVICE_PRODUCT_STRING_DUALSENSE;
+		}
+		else
+		{
+			stringSizeCb = sizeof(HID_DEVICE_PRODUCT_STRING);
+			string = HID_DEVICE_PRODUCT_STRING;
+		}
 		break;
 	case HID_STRING_ID_ISERIALNUMBER:
 		stringSizeCb = wcslen(DeviceContext->SerialNumber) * sizeof(WCHAR) + sizeof(WCHAR);

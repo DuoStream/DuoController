@@ -11,9 +11,9 @@
 
 ## Overview
 
-**DuoController** is a driver for Windows that emulates **DualSense Edge** and **Xbox Elite** controllers.
+**DuoController** is a driver for Windows that emulates **Xbox Elite**, **DualShock 4**, **DualSense** and **DualSense Edge** controllers.
 
-It is a spiritual successor to [ViGEmBus](https://github.com/ViGEm/ViGEmBus), the now-abandoned KMDF-based kernel driver, reimagined using Microsoft's **User-Mode Driver Framework (UMDF)**.
+It is a spiritual successor to [ViGEmBus](https://github.com/ViGEm/ViGEmBus), the now-abandoned KMDF-based kernel driver, reimagined using Microsoft's **Xbox GIP Synthetic** and **User-Mode Driver Framework (UMDF)** APIs.
 
 ## Why Userspace?
 
@@ -46,8 +46,8 @@ This makes DuoController dramatically more accessible to:
 
 ## Features
 
-- **Full DualSense Edge Controller Emulation** - Via HID minidriver
-- **Full Xbox Elite Controller Emulation** - Via `xboxgipsynthetic.dll`
+- **Full DualShock 4, DualSense & DualSense Edge Controller Emulation**
+- **Full Xbox Elite Controller Emulation**
 - **Session Isolation** - Isolates gamepads to the current session ID for multi-session and RDP environments
 - **Minimal Footprint** - A single DLL/INF pair, no kernel components
 
@@ -55,19 +55,23 @@ This makes DuoController dramatically more accessible to:
 
 ```mermaid
 flowchart TB
-    App["<b>Your Service</b><br/><span style='white-space:nowrap;color:inherit;font-size:small'>Running as SYSTEM</span><br/><br/>DuoController_Initialize()<br/><span style='white-space:nowrap;color:inherit'>DuoController_CreateController(Ds|Xbox)</span><br/>DuoController_SendReport()<br/>DuoController_SendReportDs()<br/>DuoController_RemoveController()<br/>DuoController_Uninitialize()"]
-    DS["<b>DualSense Path</b><br/><br/>Shared Memory<br/>(UMDF Driver)"]
+    App["<b>Your Service</b><br/><span style='white-space:nowrap;color:inherit;font-size:small'>Running as SYSTEM</span><br/><br/>DuoController_Initialize()<br/><span style='white-space:nowrap;color:inherit'>DuoController_CreateController(Xbox|DualShock4|DualSense|DualSenseEdge)</span><br/>DuoController_SendReport()<br/>DuoController_RemoveController()<br/>DuoController_Uninitialize()"]
     Xbox["<b>Xbox Path</b><br/><br/>xboxgipsynthetic.dll<br/>(System API)"]
+    DS4["<b>DualShock 4 Path</b><br/><br/>Shared Memory<br/>(UMDF Driver)"]
+    DS["<b>DualSense / Edge Path</b><br/><br/>Shared Memory<br/>(UMDF Driver)"]
     Input["<b>Windows Game Input API</b><br/><span style='white-space:nowrap;color:inherit'>(GameInput / XInput / DirectInput / RawInput)</span>"]
 
-    App --> DS
     App --> Xbox
-    DS --> Input
+    App --> DS4
+    App --> DS
     Xbox --> Input
+    DS4 --> Input
+    DS --> Input
 
     style App fill:#1a1a2e,stroke:#e94560,stroke-width:2px,color:#fff
-    style DS fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
     style Xbox fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style DS4 fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
+    style DS fill:#16213e,stroke:#0f3460,stroke-width:2px,color:#fff
     style Input fill:#1a1a2e,stroke:#e94560,stroke-width:2px,color:#fff
 ```
 
@@ -79,22 +83,20 @@ HRESULT DuoController_Initialize();
 
 // Create a virtual controller
 HRESULT DuoController_CreateController(
-    DUO_CONTROLLER_TYPE controllerType,    // DuoControllerTypeXbox or DuoControllerTypeDs
+    DUO_CONTROLLER_TYPE controllerType, // Xbox, DualShock4, DualSense, or DualSenseEdge
     DuoController_VibrationReportCallback_t vibrationCallback,
     void* vibrationCallbackContext,
     void** controller
 );
 
-// Send Xbox Elite input report
+// Send an input report:
+// Xbox       -> DUO_CONTROLLER_INPUT_REPORT_XBOX
+// DualShock4 -> DUO_CONTROLLER_INPUT_REPORT_DS4
+// DualSense  -> DUO_CONTROLLER_INPUT_REPORT_DUALSENSE
+// Edge       -> DUO_CONTROLLER_INPUT_REPORT_DUALSENSE
 HRESULT DuoController_SendReport(
     void* controller,
-    DUO_CONTROLLER_INPUT_REPORT_XBOX_EXTENDED* inputReport
-);
-
-// Send DualSense Edge input report
-HRESULT DuoController_SendReportDs(
-    void* controller,
-    DUO_CONTROLLER_INPUT_REPORT_DS* inputReport
+    void* inputReport
 );
 
 // Remove a virtual controller
@@ -123,7 +125,7 @@ HRESULT DuoController_Uninitialize();
 | Project | Description |
 |---|---|
 | `DuoController` | The UMDF driver DLL and library — implements the HID minidriver, shared memory server, and the client API |
-| `DuoControllerSample` | A minimal C sample showing library usage for both Xbox One and DualSense Edge controller types |
+| `DuoControllerSample` | A minimal C sample showing library usage for Xbox, DualSense Edge, DualSense, and DualShock 4 controller types |
 
 ## License
 
