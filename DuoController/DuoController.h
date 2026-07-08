@@ -27,7 +27,7 @@
 typedef enum _DUO_CONTROLLER_TYPE
 {
 	/// <summary>
-	/// Virtual Xbox One controller (uses xboxgipsynthetic.dll).
+	/// Virtual Xbox One controller (translated to xinput via xinputhid.sys).
 	/// </summary>
 	DuoControllerTypeXbox = 0,
 
@@ -116,23 +116,20 @@ typedef struct _DUO_CONTROLLER_INPUT_REPORT_XBOX
 	UINT8 X : 1;
 	UINT8 Y : 1;
 
-	UINT8 DPadUp : 1;
-	UINT8 DPadDown : 1;
-	UINT8 DPadLeft : 1;
-	UINT8 DPadRight : 1;
+	UINT8 DPad : 4; // 0=None, 1=North, 2=Northeast, ..., 8=Northwest (clockwise)
 
 	UINT8 LeftBumper : 1;
 	UINT8 RightBumper : 1;
 	UINT8 LeftStick : 1;
 	UINT8 RightStick : 1;
 
-	UINT16 LeftTrigger; // Analog 0-65535
-	UINT16 RightTrigger; // Analog 0-65535
+	UINT8 LeftTrigger; // Analog 0-255
+	UINT8 RightTrigger; // Analog 0-255
 
-	INT16 LeftStickHorizontal; // -32768 (left) to 32767 (right)
-	INT16 LeftStickVertical;   // -32768 (down) to 32767 (up)
-	INT16 RightStickHorizontal; // -32768 (left) to 32767 (right)
-	INT16 RightStickVertical;   // -32768 (down) to 32767 (up)
+	UINT16 LeftStickHorizontal; // 0 (far left) to 65535 (far right)
+	UINT16 LeftStickVertical;   // 0 (far top) to 65535 (far bottom)
+	UINT16 RightStickHorizontal; // 0 (far left) to 65535 (far right)
+	UINT16 RightStickVertical; // 0 (far top) to 65535 (far bottom)
 
 	UINT8 Paddle1 : 1;
 	UINT8 Paddle2 : 1;
@@ -434,10 +431,8 @@ typedef struct _DUO_CONTROLLER_FORCE_FEEDBACK_REPORT
 	UINT8 LeftMotor; // 0-255
 	UINT8 RightMotor; // 0-255
 	UINT8 Duration; // 0-255 (246 on test capture, must be 255 when combined with Delay)
-	UINT8 Delay; // 0-255 (9 on test capture, must be 255 when combined with Duration)
-	UINT8 Repeat; // 0 or 1 (0 on test capture)
-	UINT8 PulsePeriod; // 0 on test capture
-	UINT8 NumberOfPulses; // 235 on test capture
+	UINT8 StartDelay; // 0-255 (9 on test capture, must be 255 when combined with Duration)
+	UINT8 Loop; // 0 or 1 (0 on test capture)
 } DUO_CONTROLLER_FORCE_FEEDBACK_REPORT;
 
 #pragma pack(pop)

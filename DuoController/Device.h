@@ -18,24 +18,28 @@ EXTERN_C_START
 
 typedef UCHAR HID_REPORT_DESCRIPTOR, *PHID_REPORT_DESCRIPTOR;
 
-#define HID_DEVICE_VID 0x054C
+#define HID_DEVICE_VID_SONY 0x054C
+#define HID_DEVICE_VID_MICROSOFT 0x045E
 
 #define HID_DEVICE_VERSION 0x0001
 
 #define MAXIMUM_STRING_LENGTH (126 * sizeof(WCHAR))
 #define MAX_DEVICE_INSTANCE_ID_LEN 200
-#define HID_DEVICE_MANUFACTURER_STRING L"Sony Interactive Entertainment"
+#define HID_DEVICE_MANUFACTURER_STRING_SONY L"Sony Interactive Entertainment"
+#define HID_DEVICE_MANUFACTURER_STRING_MICROSOFT L"Microsoft"
 #define HID_DEVICE_PRODUCT_STRING L"DualSense Edge Wireless Controller"
 #define HID_DEVICE_PRODUCT_STRING_DUALSENSE L"DualSense Wireless Controller"
 #define HID_DEVICE_PRODUCT_STRING_DS4 L"Wireless Controller"
+#define HID_DEVICE_PRODUCT_STRING_XBOX L"Xbox One Elite Wireless Controller"
 #define HID_DEVICE_SERIAL_NUMBER_MAX_LEN 128
 #define HID_DEVICE_MANUFACTURER_STRING_INDEX 1
 #define HID_DEVICE_PRODUCT_STRING_INDEX 2
 
 typedef enum _DUO_CONTROLLER_SUB_TYPE
 {
-	DuoControllerSubTypeDualSenseEdge = 0,
-	DuoControllerSubTypeDualShock4 = 1
+	DuoControllerSubTypeDualSense = 0,
+	DuoControllerSubTypeDualShock4 = 1,
+	DuoControllerSubTypeXbox = 2
 } DUO_CONTROLLER_SUB_TYPE;
 
 typedef struct _SHARED_MEMORY_SERVER_ATTRIBUTES
@@ -53,6 +57,12 @@ typedef struct _SHARED_MEMORY_SERVER_ATTRIBUTES
 	HANDLE InputThreadHandle;
 	HANDLE StopEvent;
 	PSECURITY_ATTRIBUTES SharedMemSecurityAttr;
+#ifdef _DEBUG
+	// Debug logging shared memory
+	WCHAR DebugMemName[260];
+	HANDLE DebugMappingHandle;
+	LPVOID DebugView;
+#endif
 } SHARED_MEMORY_SERVER_ATTRIBUTES, *PSHARED_MEMORY_SERVER_ATTRIBUTES;
 
 // The device context performs the same job as a WDM device extension in the driver frameworks
@@ -68,7 +78,7 @@ typedef struct _DEVICE_CONTEXT
 	WCHAR SerialNumber[HID_DEVICE_SERIAL_NUMBER_MAX_LEN];
 	HID_XFER_PACKET ReportPacket;
 	DUO_CONTROLLER_SUB_TYPE ControllerSubType;
-	UCHAR DsInputReport[DS_REPORT_SIZE];
+	UCHAR InputReport[DS_REPORT_SIZE];
 	DS_OUTPUT_REPORT DsOutputReport;
 	SHARED_MEMORY_SERVER_ATTRIBUTES SharedMemServerAttributes;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;

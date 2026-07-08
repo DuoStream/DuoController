@@ -13,7 +13,7 @@
 
 **DuoController** is a driver for Windows that emulates **Xbox Elite**, **DualShock 4**, **DualSense** and **DualSense Edge** controllers.
 
-It is a spiritual successor to [ViGEmBus](https://github.com/ViGEm/ViGEmBus), the now-abandoned KMDF-based kernel driver, reimagined using Microsoft's **Xbox GIP Synthetic** and **User-Mode Driver Framework (UMDF)** APIs.
+It is a spiritual successor to [ViGEmBus](https://github.com/ViGEm/ViGEmBus), the now-abandoned KMDF-based kernel driver, reimagined using Microsoft's **User-Mode Driver Framework (UMDF)**.
 
 ## Why Userspace?
 
@@ -55,8 +55,8 @@ This makes DuoController dramatically more accessible to:
 
 ```mermaid
 flowchart TB
-    App["<b>Your Service</b><br/><span style='white-space:nowrap;color:inherit;font-size:small'>Running as SYSTEM</span><br/><br/>DuoController_Initialize()<br/><span style='white-space:nowrap;color:inherit'>DuoController_CreateController(Xbox|DualShock4|DualSense|DualSenseEdge)</span><br/>DuoController_SendReport()<br/>DuoController_RemoveController()<br/>DuoController_Uninitialize()"]
-    Xbox["<b>Xbox Path</b><br/><br/>xboxgipsynthetic.dll<br/>(System API)"]
+    App["<b>Your Application</b><br/><span style='white-space:nowrap;color:inherit;font-size:small'>Running as Local Administrator or SYSTEM in your session of choice</span><br/><br/>DuoController_Initialize()<br/><span style='white-space:nowrap;color:inherit'>DuoController_CreateController(Xbox|DualShock4|DualSense|DualSenseEdge)</span><br/>DuoController_SendReport()<br/>DuoController_RemoveController()<br/>DuoController_Uninitialize()"]
+    Xbox["<b>Xbox Path</b><br/><br/>Shared Memory<br/><span style='white-space:nowrap;color:inherit'>(UMDF + xinputhid Filter Driver)</span>"]
     DS4["<b>DualShock 4 Path</b><br/><br/>Shared Memory<br/>(UMDF Driver)"]
     DS["<b>DualSense / Edge Path</b><br/><br/>Shared Memory<br/>(UMDF Driver)"]
     Input["<b>Windows Game Input API</b><br/><span style='white-space:nowrap;color:inherit'>(GameInput / XInput / DirectInput / RawInput)</span>"]

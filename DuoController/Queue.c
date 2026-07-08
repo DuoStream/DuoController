@@ -125,22 +125,26 @@ NTSTATUS DuoControllerManualQueueInitialize(_In_ WDFDEVICE Device, _Out_ WDFQUEU
 /// <param name="IoControlCode">I/O control code.</param>
 VOID DuoControllerEvtIoDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request, _In_ size_t OutputBufferLength, _In_ size_t InputBufferLength, _In_ ULONG IoControlCode)
 {
+	(void)OutputBufferLength;
+	(void)InputBufferLength;
+
 	NTSTATUS status = STATUS_NOT_IMPLEMENTED;
 	WDFDEVICE device;
 	PDEVICE_CONTEXT deviceContext;
 	PQUEUE_CONTEXT queueContext;
 	BOOLEAN completeRequest = TRUE;
 
-	UNREFERENCED_PARAMETER(OutputBufferLength);
-	UNREFERENCED_PARAMETER(InputBufferLength);
-
 	device = WdfIoQueueGetDevice(Queue);
 	queueContext = QueueGetContext(Queue);
 	deviceContext = DeviceGetContext(device);
 
+	WriteDebugLog(deviceContext, "[DRV] IOCTL 0x%08X in=%d out=%d",
+		IoControlCode, (int)InputBufferLength, (int)OutputBufferLength);
+
 	if (deviceContext->HidDescriptor.bLength == 0 || 
 		deviceContext->HidDescriptor.DescriptorList[0].wReportLength == 0)
 	{
+		WriteDebugLog(deviceContext, "[DRV] IOCTL rejected: HID descriptor not ready");
 		WdfRequestComplete(Request, status);
 		return;
 	}
@@ -148,6 +152,8 @@ VOID DuoControllerEvtIoDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Reques
 	switch (IoControlCode)
 	{
 	case IOCTL_HID_GET_DEVICE_DESCRIPTOR:   // METHOD_NEITHER
+		WriteDebugLog(deviceContext, "[DRV] >>> GET_DEVICE_DESCRIPTOR");
+
 		// Retrieves the device's HID descriptor.
 		status = RequestCopyFromBuffer(Request,
 			&deviceContext->HidDescriptor,
@@ -156,6 +162,8 @@ VOID DuoControllerEvtIoDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Reques
 		break;
 
 	case IOCTL_HID_GET_DEVICE_ATTRIBUTES:   // METHOD_NEITHER
+		WriteDebugLog(deviceContext, "[DRV] >>> GET_DEVICE_ATTRIBUTES");
+
 		// Retrieves a device's attributes in a HID_DEVICE_ATTRIBUTES structure.
 		status = RequestCopyFromBuffer(Request,
 			&queueContext->DeviceContext->HidDeviceAttributes,
@@ -163,6 +171,8 @@ VOID DuoControllerEvtIoDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Reques
 		break;
 
 	case IOCTL_HID_GET_REPORT_DESCRIPTOR:   // METHOD_NEITHER
+		WriteDebugLog(deviceContext, "[DRV] >>> GET_REPORT_DESCRIPTOR");
+
 		// Obtains the report descriptor for the HID device.
 		status = RequestCopyFromBuffer(Request,
 			deviceContext->ReportDescriptor,
@@ -176,6 +186,27 @@ VOID DuoControllerEvtIoDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Reques
 
 	case IOCTL_HID_WRITE_REPORT:            // METHOD_NEITHER
 		// Transmits a class driver-supplied report to the device.
+#ifdef _DEBUG
+		{
+			WDFMEMORY inMem;
+			NTSTATUS inStatus = WdfRequestRetrieveInputMemory(Request, &inMem);
+			if (NT_SUCCESS(inStatus))
+			{
+				size_t inLen;
+				PBYTE inBuf = (PBYTE)WdfMemoryGetBuffer(inMem, &inLen);
+				if (inBuf && inLen > 0)
+					WriteDebugLog(deviceContext, "[DRV] >>> WRITE_REPORT inLen=%d first4=[%02X %02X %02X %02X]",
+						(int)inLen, inBuf[0], inLen > 1 ? inBuf[1] : 0,
+						inLen > 2 ? inBuf[2] : 0, inLen > 3 ? inBuf[3] : 0);
+				else
+					WriteDebugLog(deviceContext, "[DRV] >>> WRITE_REPORT (no data)");
+			}
+			else
+			{
+				WriteDebugLog(deviceContext, "[DRV] >>> WRITE_REPORT inStatus=0x%08X", inStatus);
+			}
+		}
+#endif
 		status = WriteReport(queueContext, Request);
 		break;
 	
@@ -197,31 +228,74 @@ VOID DuoControllerEvtIoDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Reques
 	// The new IRP is then passed to UMDF host and driver for further processing.
 
 	case IOCTL_UMDF_HID_GET_FEATURE:        // METHOD_NEITHER
-
+#ifdef _DEBUG
+		{
+			WDFMEMORY inMem;
+			NTSTATUS inStatus = WdfRequestRetrieveInputMemory(Request, &inMem);
+			if (NT_SUCCESS(inStatus))
+			{
+				size_t inLen;
+				PBYTE inBuf = (PBYTE)WdfMemoryGetBuffer(inMem, &inLen);
+				if (inBuf && inLen > 0)
+					WriteDebugLog(deviceContext, "[DRV] >>> GET_FEATURE reportId=%d inLen=%d", inBuf[0], (int)inLen);
+				else
+					WriteDebugLog(deviceContext, "[DRV] >>> GET_FEATURE (no data)");
+			}
+			else
+			{
+				WriteDebugLog(deviceContext, "[DRV] >>> GET_FEATURE inStatus=0x%08X", inStatus);
+			}
+		}
+#endif
 		status = GetFeature(queueContext, Request);
 		break;
 
 	case IOCTL_UMDF_HID_SET_FEATURE:        // METHOD_NEITHER
-
+#ifdef _DEBUG
+		{
+			WDFMEMORY inMem;
+			NTSTATUS inStatus = WdfRequestRetrieveInputMemory(Request, &inMem);
+			if (NT_SUCCESS(inStatus))
+			{
+				size_t inLen;
+				PBYTE inBuf = (PBYTE)WdfMemoryGetBuffer(inMem, &inLen);
+				if (inBuf && inLen > 0)
+					WriteDebugLog(deviceContext, "[DRV] >>> SET_FEATURE reportId=%d inLen=%d first4=[%02X %02X %02X %02X]",
+						inBuf[0], (int)inLen,
+						inLen > 0 ? inBuf[0] : 0, inLen > 1 ? inBuf[1] : 0,
+						inLen > 2 ? inBuf[2] : 0, inLen > 3 ? inBuf[3] : 0);
+				else
+					WriteDebugLog(deviceContext, "[DRV] >>> SET_FEATURE (no data)");
+			}
+			else
+			{
+				WriteDebugLog(deviceContext, "[DRV] >>> SET_FEATURE inStatus=0x%08X", inStatus);
+			}
+		}
+#endif
 		status = SetFeature(queueContext, Request);
 		break;
 
 	case IOCTL_UMDF_HID_GET_INPUT_REPORT:  // METHOD_NEITHER
+		WriteDebugLog(deviceContext, "[DRV] >>> IOCTL_UMDF_HID_GET_INPUT_REPORT");
 
 		status = GetInputReport(queueContext, Request);
 		break;
 
 	case IOCTL_UMDF_HID_SET_OUTPUT_REPORT: // METHOD_NEITHER
+		WriteDebugLog(deviceContext, "[DRV] >>> IOCTL_UMDF_HID_SET_OUTPUT_REPORT");
 
 		status = SetOutputReport(queueContext, Request);
 		break;
 
 	case IOCTL_HID_GET_STRING:                      // METHOD_NEITHER
+		WriteDebugLog(deviceContext, "[DRV] >>> IOCTL_HID_GET_STRING");
 
 		status = GetString(Request, deviceContext);
 		break;
 
 	case IOCTL_HID_GET_INDEXED_STRING:              // METHOD_OUT_DIRECT
+		WriteDebugLog(deviceContext, "[DRV] >>> IOCTL_HID_GET_INDEXED_STRING");
 
 		status = GetIndexedString(Request, deviceContext);
 		break;
@@ -231,6 +305,7 @@ VOID DuoControllerEvtIoDeviceControl(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Reques
 	case IOCTL_HID_DEACTIVATE_DEVICE:               // METHOD_NEITHER
 	case IOCTL_GET_PHYSICAL_DESCRIPTOR:             // METHOD_OUT_DIRECT
 	default:
+		WriteDebugLog(deviceContext, "[DRV] >>> UNHANDLED IOCTL 0x%08X", IoControlCode);
 		status = STATUS_NOT_IMPLEMENTED;
 		break;
 	

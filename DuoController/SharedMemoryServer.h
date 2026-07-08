@@ -23,6 +23,12 @@ DWORD WINAPI InputSharedMemoryThread(LPVOID Params);
 
 VOID WriteResponseToOutputClient(PQUEUE_CONTEXT queueContext);
 
+#ifdef _DEBUG
+VOID WriteDebugLog(PDEVICE_CONTEXT devContext, const char* Format, ...);
+#else
+#define WriteDebugLog(...) ((void)0)
+#endif
+
 VOID ShutdownSharedMemoryServer(PDEVICE_CONTEXT devContext);
 
 VOID CompleteReadRequest(PDEVICE_CONTEXT devContext, UCHAR ReportId);

@@ -26,18 +26,18 @@ DEFINE_GUID (GUID_DEVINTERFACE_DuoController, 0x3d877443,0x4dda,0x4bab,0xa3,0xe2
 // Input client message header
 typedef struct _MESSAGE_HEADER
 {
-	UCHAR MssageType;
+	UCHAR MessageType;
 	UCHAR MessageLength;
-
 } MESSAGE_HEADER, *PMESSAGE_HEADER;
 
 #define MESSAGE_HEADER_LEN sizeof(MESSAGE_HEADER)
 
-// DualSense Edge shared memory constants
-#define DS_INPUT_REPORT_PARTIAL 0x01
-#define DS_INPUT_REPORT_FULL 0x02
-#define DS_OUTPUT_REPORT_AVAILABLE 0x03
+// Shared memory message types (common for all controller types)
+#define INPUT_REPORT_PARTIAL 0x01
+#define INPUT_REPORT_FULL 0x02
+#define OUTPUT_REPORT_AVAILABLE 0x03
 
+// DualSense Edge shared memory constants
 #define DS_REPORT_SIZE 64
 #define DS_INPUT_REPORT_ID 0x01
 #define DS_OUTPUT_REPORT_ID 0x02
@@ -47,10 +47,6 @@ typedef struct _MESSAGE_HEADER
 #define DS_FIRMWARE_VERSION_REPORT_ID 0x20
 
 // DualShock 4 shared memory constants
-#define DS4_INPUT_REPORT_PARTIAL 0x01
-#define DS4_INPUT_REPORT_FULL 0x02
-#define DS4_OUTPUT_REPORT_AVAILABLE 0x03
-
 #define DS4_REPORT_SIZE 64
 #define DS4_INPUT_REPORT_ID 0x01
 #define DS4_OUTPUT_REPORT_ID 0x05
@@ -114,6 +110,40 @@ typedef struct _MESSAGE_HEADER
 #define DS4_HAT_UPLEFT    7
 #define DS4_HAT_NULL      8
 
+// Xbox Constants
+#define XB1_REPORT_SIZE 64
+#define XB1_INPUT_REPORT_ID 0x01
+#define XB1_OUTPUT_REPORT_ID 0x03
+#define XB1_OUTPUT_REPORT_SIZE 8
+
+// Xbox HID usage values for buttons
+#define XB1_BUTTON_A     0
+#define XB1_BUTTON_B     1
+#define XB1_BUTTON_X     2
+#define XB1_BUTTON_Y     3
+#define XB1_BUTTON_LB    4
+#define XB1_BUTTON_RB    5
+#define XB1_BUTTON_BACK  6
+#define XB1_BUTTON_START 7
+#define XB1_BUTTON_LSB   8
+#define XB1_BUTTON_RSB   9
+#define XB1_BUTTON_GUIDE   10
+#define XB1_BUTTON_PADDLE1 11
+#define XB1_BUTTON_PADDLE2 12
+#define XB1_BUTTON_PADDLE3 13
+#define XB1_BUTTON_PADDLE4 14
+
+// Hat switch values (shared with DS/DS4)
+#define XB1_HAT_UP        0
+#define XB1_HAT_UPRIGHT   1
+#define XB1_HAT_RIGHT     2
+#define XB1_HAT_DOWNRIGHT 3
+#define XB1_HAT_DOWN      4
+#define XB1_HAT_DOWNLEFT  5
+#define XB1_HAT_LEFT      6
+#define XB1_HAT_UPLEFT    7
+#define XB1_HAT_NULL      8
+
 // Touchpad dimensions
 #define DS_TOUCHPAD_MAX_X 1919
 #define DS_TOUCHPAD_MAX_Y 942
@@ -136,6 +166,15 @@ typedef struct _DS4_OUTPUT_REPORT
 	UCHAR Data[30];
 
 } DS4_OUTPUT_REPORT, *PDS4_OUTPUT_REPORT;
+
+typedef struct _XB1_OUTPUT_REPORT
+{
+	UCHAR ReportId;
+	UCHAR LeftMotor;
+	UCHAR RightMotor;
+	UCHAR Reserved[5];
+
+} XB1_OUTPUT_REPORT, *PXB1_OUTPUT_REPORT;
 
 typedef struct _DS_FEATURE_IN_IMU_CALIBRATION {
 	UINT8 ReportID; // 0x05
@@ -199,5 +238,19 @@ typedef struct _DS_FEATURE_IN_FW_VERSION {
 } DS_FEATURE_IN_FW_VERSION, *PDS_FEATURE_IN_FW_VERSION;
 
 #include <poppack.h>
+
+// Debug shared memory ring buffer (SPSC lock-free, driver writes, client reads)
+#define DEBUG_MSG_SLOT_SIZE 128
+#define DEBUG_MSG_SLOT_COUNT 64
+#define DEBUG_SHM_SIZE (sizeof(DEBUG_RING_BUFFER))
+
+typedef struct _DEBUG_RING_BUFFER
+{
+	volatile LONG WriteIndex;
+	LONG Padding[15];
+	volatile LONG ReadIndex;
+	LONG Padding2[15];
+	char Messages[DEBUG_MSG_SLOT_COUNT][DEBUG_MSG_SLOT_SIZE];
+} DEBUG_RING_BUFFER, *PDEBUG_RING_BUFFER;
 
 EXTERN_C_END

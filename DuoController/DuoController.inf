@@ -25,14 +25,16 @@ DriverVer=
 %ManufacturerName%=Standard,NT$ARCH$.10.0...17134
 
 [Standard.NT$ARCH$.10.0...17134]
-%ROOT\VID_054C&PID_0DF2.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_0DF2
-%ROOT\VID_054C&PID_0CE6.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_0CE6
-%ROOT\VID_054C&PID_05C4.DeviceName%=DuoController_Install, ROOT\VID_054C&PID_05C4
+%ROOT\VID_054C&PID_0DF2.DeviceName%=DuoController_Install_PS, ROOT\VID_054C&PID_0DF2
+%ROOT\VID_054C&PID_0CE6.DeviceName%=DuoController_Install_PS, ROOT\VID_054C&PID_0CE6
+%ROOT\VID_054C&PID_05C4.DeviceName%=DuoController_Install_PS, ROOT\VID_054C&PID_05C4
+%ROOT\VID_045E&PID_02FF&IG_00.DeviceName%=DuoController_Install_Xbox, ROOT\VID_045E&PID_02FF&IG_00
 
 [ControlFlags]
 ExcludeFromSelect=ROOT\VID_054C&PID_0DF2
 ExcludeFromSelect=ROOT\VID_054C&PID_0CE6
 ExcludeFromSelect=ROOT\VID_054C&PID_05C4
+ExcludeFromSelect=ROOT\VID_045E&PID_02FF&IG_00
 
 [ClassInstall32]
 AddReg=DuoControllerClass_RegistryAdd
@@ -52,23 +54,23 @@ DuoController.dll=1
 [DuoController_Install.NT.hw.AddReg]
 HKR,,"LowerFilters",0x00010008,"WUDFRd"
 
-; DuoController
-[DuoController_Install]
+; PlayStation (DualSense Edge / DualSense / DualShock 4)
+[DuoController_Install_PS]
 UmdfLibraryVersion=$UMDFVERSION$ 
 ServiceBinary=%13%\DuoController.dll
 
-[DuoController_Install.NT]
+[DuoController_Install_PS.NT]
 CopyFiles=UMDriverCopy
 
-[DuoController_Install.NT.Services]
+[DuoController_Install_PS.NT.Services]
 AddService=WUDFRd,0x000001f8,WUDFRD_ServiceInstall
 AddService=mshidumdf, 0x000001fa, mshidumdf.AddService
 
-[DuoController_Install.NT.hw]
+[DuoController_Install_PS.NT.hw]
 AddReg=DuoController_Install.NT.hw.AddReg
 
-[DuoController_Install.NT.Wdf]
-UmdfService=DuoController,DuoController_Install
+[DuoController_Install_PS.NT.Wdf]
+UmdfService=DuoController,DuoController_Install_PS
 UmdfServiceOrder=DuoController
 UmdfKernelModeClientPolicy=AllowKernelModeClients
 UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
@@ -76,8 +78,44 @@ UmdfMethodNeitherAction=Copy
 UmdfFsContextUsePolicy=CanUseFsContext2
 UmdfHostPriority=PriorityHigh
 
-[DuoController_Install.NT.CoInstallers]
+[DuoController_Install_PS.NT.CoInstallers]
 AddReg=CoInstallers_AddReg
+
+; Xbox (XInputHID-compatible HID device via xinputhid.sys)
+[DuoController_Install_Xbox]
+UmdfLibraryVersion=$UMDFVERSION$ 
+ServiceBinary=%13%\DuoController.dll
+Include=xinputhid.inf
+AddReg=Xbox_DevicePropertyFlags
+
+[DuoController_Install_Xbox.NT]
+CopyFiles=UMDriverCopy
+
+[DuoController_Install_Xbox.NT.Services]
+AddService=WUDFRd,0x000001f8,WUDFRD_ServiceInstall
+AddService=mshidumdf, 0x000001fa, mshidumdf.AddService
+Include=xinputhid.inf
+Needs=GIP_Hid.Services
+
+[DuoController_Install_Xbox.NT.hw]
+AddReg=DuoController_Install.NT.hw.AddReg
+Include=xinputhid.inf
+Needs=GIP_Hid.HW
+
+[DuoController_Install_Xbox.NT.Wdf]
+UmdfService=DuoController,DuoController_Install_Xbox
+UmdfServiceOrder=DuoController
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction=Copy
+UmdfFsContextUsePolicy=CanUseFsContext2
+UmdfHostPriority=PriorityHigh
+
+[DuoController_Install_Xbox.NT.CoInstallers]
+AddReg=CoInstallers_AddReg
+
+[Xbox_DevicePropertyFlags]
+HKR,,DevicePropertyFlags,0x00010001,0x4
 
 [WUDFRD_ServiceInstall]
 DisplayName = %WudfRdDisplayName%
@@ -111,3 +149,4 @@ WudfRdDisplayName="DuoController User-mode Driver"
 ROOT\VID_054C&PID_0DF2.DeviceName="DualSense Edge Wireless Controller"
 ROOT\VID_054C&PID_0CE6.DeviceName="DualSense Wireless Controller"
 ROOT\VID_054C&PID_05C4.DeviceName="DualShock 4 Wireless Controller"
+ROOT\VID_045E&PID_02FF&IG_00.DeviceName="Xbox One Elite Wireless Controller"

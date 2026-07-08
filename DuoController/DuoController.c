@@ -13,12 +13,8 @@
 // limitations under the License.
 
 #include "DuoController.h"
-#include <winternl.h>
 #include <winstring.h>
 #include <initguid.h>
-#include <devpkey.h>
-#include <devquery.h>
-#include <devquerydef.h>
 #include <setupapi.h>
 #include <cfgmgr32.h>
 #include <newdev.h>
@@ -27,7 +23,6 @@
 
 #pragma comment(lib, "mincore.lib")
 #pragma comment(lib, "onecore.lib")
-#pragma comment(lib, "ntdll.lib")
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "cfgmgr32.lib")
 
@@ -35,50 +30,7 @@
 #define STATUS_WAIT_0 ((DWORD)0x00000000L)
 #endif
 
-/// <summary>
-/// A dummy value used to target no process, essentially acting as a input silencer.
-/// </summary>
-#define NO_PROCESS 0x100000000000000
-
-/// <summary>
-/// Controller types supported by xboxgipsynthetic.dll.
-/// </summary>
-typedef enum _SYNTHETIC_CONTROLLER_TYPE
-{
-	SyntheticControllerTypeGamepad = 0,
-	SyntheticControllerTypeGipStreamGamepad = 1,
-	SyntheticControllerTypeExtendedGamepad = 2
-} SYNTHETIC_CONTROLLER_TYPE;
-
-/// <summary>
-/// The supported synthetic controller input report types.
-/// </summary>
-typedef enum _SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE
-{
-	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_CONTROLLER = 0,
-	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_VKEY = 1,
-	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_GIP_STREAM = 2,
-	SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_EXTENDED_CONTROLLER = 3
-} SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE;
-
-/// <summary>
-/// The supported synthetic controller output report types.
-/// </summary>
-typedef enum _SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE
-{
-	SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER = 0
-} SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE;
-
 #pragma pack(push, 1)
-
-/// <summary>
-/// The virtual key input report structure used to report the Guide button state.
-/// </summary>
-typedef struct _SYNTHETIC_CONTROLLER_VKEY_INPUT_REPORT
-{
-	INT16 VirtualKey; // Must be set to 0, internally hardcoded to VK_LWIN
-	UINT8 State; // 0 = Released, 1 = Pressed
-} SYNTHETIC_CONTROLLER_VKEY_INPUT_REPORT;
 
 /// <summary>
 /// The DuoController structure.
@@ -90,10 +42,25 @@ typedef struct _DUO_CONTROLLER
 	DuoController_VibrationReportCallback_t VibrationReportCallback;
 	void* VibrationReportCallbackContext;
 
-	// Xbox-specific fields
-	void* SyntheticHandle;
-	HDEVQUERY DeviceQuery;
+	// Xbox-specific fields (XInputHID via shared memory HID device)
+	WCHAR XboxInstanceId[256];
+	WCHAR XboxHidInstanceId[256];
+	HANDLE XboxInputMapping;
+	HANDLE XboxOutputMapping;
+	LPVOID XboxInputView;
+	LPVOID XboxOutputView;
+	HANDLE XboxInputEvent;
+	HANDLE XboxOutputEvent;
+	HANDLE XboxFfbThread;
+	HANDLE XboxFfbStopEvent;
+	CRITICAL_SECTION XboxCs;
 	DUO_CONTROLLER_INPUT_REPORT_XBOX LastXboxInputReport;
+#ifdef _DEBUG
+	HANDLE XboxDebugMapping;
+	LPVOID XboxDebugView;
+	HANDLE XboxDebugThread;
+	HANDLE XboxDebugStopEvent;
+#endif
 
 	// DualSense Edge-specific fields
 	WCHAR DsInstanceId[256];
@@ -126,132 +93,14 @@ typedef struct _DUO_CONTROLLER
 
 #pragma pack(pop)
 
-/// <summary>
-/// Defines a WNF type ID.
-/// </summary>
-typedef struct _WNF_TYPE_ID {
-	GUID TypeId;
-} WNF_TYPE_ID, * PWNF_TYPE_ID;
-
-/// <summary>
-/// Defines a WNF state name.
-/// </summary>
-typedef struct _WNF_STATE_NAME {
-	ULONG Data[2];
-} WNF_STATE_NAME, * PWNF_STATE_NAME;
-
-/// <summary>
-/// The WNF state name used by ISM.dll (dwm.exe) to report focus changes.
-/// </summary>
-static WNF_STATE_NAME WNF_SHEL_FOCUS_CHANGE = { 0xA3BC7875, 0xD83063E };
-
-typedef void(WINAPI *SyntheticController_ReportCallback_t)(void* controller, unsigned int outputReportType, void* outputReportBuffer, unsigned int outputReportBufferSize, void* context);
-typedef HRESULT(WINAPI *SyntheticController_CreateController_t)(SYNTHETIC_CONTROLLER_TYPE controllerType, void** controller);
-typedef HRESULT(WINAPI *SyntheticController_SetTargetProcess_t)(void* controller, unsigned long long processId /* or NO_PROCESS */, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE inputReportType, void* inputReportBuffer, unsigned int inputReportBufferSize);
-typedef HRESULT(WINAPI *SyntheticController_RegisterReportCallback_t)(void* controller, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE outputReportType, SyntheticController_ReportCallback_t callback, void* context);
-typedef HRESULT(WINAPI *SyntheticController_Connect_t)(void* controller);
-typedef HRESULT(WINAPI *SyntheticController_SendReport_t)(void* controller, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE inputReportType, void* inputReportBuffer, unsigned int inputReportBufferSize);
-typedef HRESULT(WINAPI *SyntheticController_Disconnect_t)(void* controller);
-typedef HRESULT(WINAPI *SyntheticController_UnregisterReportCallback_t)(void* controller, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE outputReportType);
-typedef HRESULT(WINAPI *SyntheticController_RemoveController_t)(void* controller);
-typedef HRESULT(WINAPI *SyntheticController_GetDeviceId_t)(void* controller, unsigned long long* deviceId);
-typedef HRESULT(WINAPI* DevSetObjectProperties_t)(DEV_OBJECT_TYPE ObjectType, PCWSTR pszObjectId, ULONG pcPropertyCount, const DEVPROPERTY* ppProperties);
-typedef NTSTATUS(WINAPI* RtlPublishWnfStateData_t)(WNF_STATE_NAME StateName, const PWNF_TYPE_ID TypeId, const VOID* Buffer, ULONG Length, const VOID* ExplicitScope);
-
-SyntheticController_CreateController_t SyntheticController_CreateController;
-SyntheticController_SetTargetProcess_t SyntheticController_SetTargetProcess;
-SyntheticController_RegisterReportCallback_t SyntheticController_RegisterReportCallback;
-SyntheticController_Connect_t SyntheticController_Connect;
-SyntheticController_SendReport_t SyntheticController_SendReport;
-SyntheticController_Disconnect_t SyntheticController_Disconnect;
-SyntheticController_UnregisterReportCallback_t SyntheticController_UnregisterReportCallback;
-SyntheticController_RemoveController_t SyntheticController_RemoveController;
-SyntheticController_GetDeviceId_t SyntheticController_GetDeviceId;
-DevSetObjectProperties_t DevSetObjectProperties;
-RtlPublishWnfStateData_t RtlPublishWnfStateData;
-
 static DWORD SessionId;
 static BOOL Initialized;
-static DWORD ForegroundWindowProcessId;
 static DUO_CONTROLLER** Controllers = NULL;
 static DWORD ControllerCount = 0;
 
 static void InitializeWindowsRuntimeForCurrentThread()
 {
-	const wchar_t* type_name = L"Windows.Internal.Gaming.SWDDeviceStatics";
-	HSTRING_HEADER header;
-	memset(&header, 0, sizeof(header));
-	HSTRING string = NULL;
-	if (SUCCEEDED(WindowsCreateStringReference(type_name, (UINT32)wcslen(type_name), &header, &string)))
-	{
-		const GUID IID_SWDeviceStatics = {
-			0x5189313c, 0xfc43, 0x41b2, { 0x82, 0xcc, 0x27, 0x1a, 0x0e, 0xe2, 0x9e, 0x80 }
-		};
-		void* factory = NULL;
-		if (FAILED(RoGetActivationFactory(string, &IID_SWDeviceStatics, &factory)))
-		{
-			RoInitialize(RO_INIT_MULTITHREADED);
-		}
-	}
-}
-
-static void WINAPI DuoController_DeviceChanged(_In_ HDEVQUERY query, _In_opt_ PVOID context, _In_ const DEV_QUERY_RESULT_ACTION_DATA* actionData)
-{
-	(void)query;
-	(void)context;
-	if (actionData->Action == DevQueryResultAdd)
-	{
-		DEVPROPERTY deviceProperty;
-		deviceProperty.CompKey.Key = DEVPKEY_Device_SessionId;
-		deviceProperty.CompKey.Store = DEVPROP_STORE_SYSTEM;
-		deviceProperty.CompKey.LocaleName = NULL;
-		deviceProperty.Type = DEVPROP_TYPE_UINT32;
-		deviceProperty.BufferSize = sizeof(SessionId);
-		deviceProperty.Buffer = (PBYTE)&SessionId;
-		DevSetObjectProperties(DevObjectTypeDevice, actionData->Data.DeviceObject.pszObjectId, 1, &deviceProperty);
-	}
-}
-
-DWORD GetForegroundWindowProcessId(DWORD timeoutMs)
-{
-	DWORD processId = 0;
-	DWORD startTime = GetTickCount();
-	do
-	{
-		HWND hwnd = GetForegroundWindow();
-		if (hwnd != NULL)
-		{
-			GetWindowThreadProcessId(hwnd, &processId);
-			break;
-		}
-		Sleep(10);
-	} while ((GetTickCount64() - startTime) < timeoutMs);
-	return processId;
-}
-
-static NTSTATUS UpdateGameInputDriverFocusState()
-{
-	NTSTATUS result = ERROR_PROC_NOT_FOUND;
-	if (RtlPublishWnfStateData != NULL)
-	{
-		result = RtlPublishWnfStateData(WNF_SHEL_FOCUS_CHANGE, NULL, &ForegroundWindowProcessId, sizeof(ForegroundWindowProcessId), NULL);
-	}
-	return result;
-}
-
-static void CALLBACK DuoController_OutputReportReceived(void* controller, unsigned int outputReportType, void* outputReportBuffer, unsigned int outputReportBufferSize, void* context)
-{
-	(void)controller;
-	InitializeWindowsRuntimeForCurrentThread();
-	ForegroundWindowProcessId = GetForegroundWindowProcessId(500);
-	DUO_CONTROLLER* duoController = (DUO_CONTROLLER*)context;
-	DUO_CONTROLLER_FORCE_FEEDBACK_REPORT* outputReport = (DUO_CONTROLLER_FORCE_FEEDBACK_REPORT*)outputReportBuffer;
-	if (outputReportType == SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER &&
-		outputReportBuffer != NULL && outputReportBufferSize >= sizeof(DUO_CONTROLLER_FORCE_FEEDBACK_REPORT) &&
-		duoController != NULL && duoController->VibrationReportCallback != NULL)
-	{
-		duoController->VibrationReportCallback(duoController, outputReport, duoController->VibrationReportCallbackContext);
-	}
+	(void)RoInitialize(RO_INIT_MULTITHREADED);
 }
 
 static HRESULT DsWin32ErrorToHresult(DWORD error)
@@ -334,17 +183,12 @@ static HRESULT InstallDuoControllerDevice(const WCHAR* hardwareId, const WCHAR* 
 	if (hDevInfo == INVALID_HANDLE_VALUE)
 		return HRESULT_FROM_WIN32(GetLastError());
 	BOOL rebootRequired = FALSE;
-	BOOL driverInStore = FALSE;
-	if (!SetupCopyOEMInfW(fullInfPath, NULL, SPOST_NONE, SP_COPY_NOOVERWRITE, NULL, 0, NULL, NULL) && GetLastError() == ERROR_FILE_EXISTS)
-		driverInStore = TRUE;
-	if (!driverInStore)
+	SetupCopyOEMInfW(fullInfPath, NULL, SPOST_NONE, SP_COPY_NOOVERWRITE, NULL, 0, NULL, NULL);
+	if (!DiInstallDriverW(NULL, fullInfPath, DIIRFLAG_FORCE_INF, &rebootRequired))
 	{
-		if (!DiInstallDriverW(NULL, fullInfPath, DIIRFLAG_FORCE_INF, &rebootRequired))
-		{
-			result = HRESULT_FROM_WIN32(GetLastError());
-			SetupDiDestroyDeviceInfoList(hDevInfo);
-			return result;
-		}
+		result = HRESULT_FROM_WIN32(GetLastError());
+		SetupDiDestroyDeviceInfoList(hDevInfo);
+		return result;
 	}
 	SP_DEVINFO_DATA devInfoData;
 	ZeroMemory(&devInfoData, sizeof(devInfoData));
@@ -389,8 +233,8 @@ static HRESULT InstallDuoControllerDevice(const WCHAR* hardwareId, const WCHAR* 
 		if (hidInstanceId != NULL && hidInstanceIdSize > 0)
 		{
 			hidInstanceId[0] = L'\0';
-			DWORD pollStart = GetTickCount();
-			while ((GetTickCount() - pollStart) < 5000)
+			ULONGLONG pollStart = GetTickCount64();
+			while ((GetTickCount64() - pollStart) < 5000)
 			{
 				WCHAR mutableId[256];
 				wcscpy_s(mutableId, ARRAYSIZE(mutableId), instanceId);
@@ -492,9 +336,9 @@ static HRESULT DsConnectInput(DUO_CONTROLLER* controller)
 	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_input", sanitized);
 	WCHAR eventName[512];
 	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_input_event", sanitized);
-	DWORD startTime = GetTickCount();
+	ULONGLONG startTime = GetTickCount64();
 	HANDLE hMapping = NULL;
-	while (GetTickCount() - startTime < 1000)
+	while (GetTickCount64() - startTime < 1000)
 	{
 		hMapping = OpenFileMappingW(FILE_MAP_WRITE, FALSE, mappingName);
 		if (hMapping != NULL)
@@ -566,9 +410,9 @@ static HRESULT DsConnectFfb(DUO_CONTROLLER* controller)
 	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_output", sanitized);
 	WCHAR eventName[512];
 	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_output_event", sanitized);
-	DWORD startTime = GetTickCount();
+	ULONGLONG startTime = GetTickCount64();
 	HANDLE hMapping = NULL;
-	while (GetTickCount() - startTime < 1000)
+	while (GetTickCount64() - startTime < 1000)
 	{
 		hMapping = OpenFileMappingW(FILE_MAP_READ, FALSE, mappingName);
 		if (hMapping != NULL)
@@ -683,7 +527,7 @@ static HRESULT DsSendRawInput(DUO_CONTROLLER* controller, const DUO_CONTROLLER_I
 	if (state->PluggedUsbData == 0 && state->PluggedUsbPower == 0)
 		report[54] = 0x18;
 	BYTE* inputMem = (BYTE*)controller->DsInputView;
-	inputMem[0] = DS_INPUT_REPORT_FULL;
+	inputMem[0] = INPUT_REPORT_FULL;
 	inputMem[1] = DS_REPORT_SIZE;
 	memcpy(&inputMem[MESSAGE_HEADER_LEN], report, DS_REPORT_SIZE);
 	if (!SetEvent(controller->DsInputEvent))
@@ -746,7 +590,7 @@ static HRESULT SendDsReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REP
 #pragma warning(suppress:4366)
 	EnterCriticalSection(&controller->DsCs);
 	inputReport->SeqNo++;
-	inputReport->DeviceTimeStamp = GetTickCount();
+	inputReport->DeviceTimeStamp = (UINT32)GetTickCount64();
 	inputReport->SensorTimestamp = inputReport->DeviceTimeStamp;
 	HRESULT result = DsSendRawInput(controller, inputReport);
 	if (SUCCEEDED(result))
@@ -766,9 +610,9 @@ static HRESULT Ds4ConnectInput(DUO_CONTROLLER* controller)
 	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_input", sanitized);
 	WCHAR eventName[512];
 	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_input_event", sanitized);
-	DWORD startTime = GetTickCount();
+	ULONGLONG startTime = GetTickCount64();
 	HANDLE hMapping = NULL;
-	while (GetTickCount() - startTime < 1000)
+	while (GetTickCount64() - startTime < 1000)
 	{
 		hMapping = OpenFileMappingW(FILE_MAP_WRITE, FALSE, mappingName);
 		if (hMapping != NULL)
@@ -835,9 +679,9 @@ static HRESULT Ds4ConnectFfb(DUO_CONTROLLER* controller)
 	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_output", sanitized);
 	WCHAR eventName[512];
 	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_output_event", sanitized);
-	DWORD startTime = GetTickCount();
+	ULONGLONG startTime = GetTickCount64();
 	HANDLE hMapping = NULL;
-	while (GetTickCount() - startTime < 1000)
+	while (GetTickCount64() - startTime < 1000)
 	{
 		hMapping = OpenFileMappingW(FILE_MAP_READ, FALSE, mappingName);
 		if (hMapping != NULL)
@@ -990,7 +834,7 @@ static HRESULT Ds4SendRawInput(DUO_CONTROLLER* controller, const DUO_CONTROLLER_
 	report[41] = (BYTE)((t2 >> 8) & 0xFF);
 	report[42] = (BYTE)((t2 >> 16) & 0xFF);
 	BYTE* inputMem = (BYTE*)controller->Ds4InputView;
-	inputMem[0] = DS4_INPUT_REPORT_FULL;
+	inputMem[0] = INPUT_REPORT_FULL;
 	inputMem[1] = DS4_REPORT_SIZE;
 	memcpy(&inputMem[MESSAGE_HEADER_LEN], report, DS4_REPORT_SIZE);
 	if (!SetEvent(controller->Ds4InputEvent))
@@ -1056,6 +900,475 @@ static HRESULT SendDs4Report(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_RE
 	return result;
 }
 
+// ==================== Xbox shared memory helpers ====================
+
+static HRESULT XboxConnectInput(DUO_CONTROLLER* controller)
+{
+	WCHAR sanitized[256];
+	SanitizeInstanceIdForPipeName(controller->XboxInstanceId, sanitized, ARRAYSIZE(sanitized));
+	WCHAR mappingName[512];
+	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_input", sanitized);
+	WCHAR eventName[512];
+	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_input_event", sanitized);
+#ifdef _DEBUG
+	wprintf(L"[XboxInput] Connecting input: mapping=%s event=%s\n", mappingName, eventName);
+#endif
+	ULONGLONG startTime = GetTickCount64();
+	HANDLE hMapping = NULL;
+	while (GetTickCount64() - startTime < 1000)
+	{
+		hMapping = OpenFileMappingW(FILE_MAP_WRITE, FALSE, mappingName);
+		if (hMapping != NULL)
+			break;
+		Sleep(10);
+	}
+	if (hMapping == NULL)
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+	LPVOID view = MapViewOfFile(hMapping, FILE_MAP_WRITE, 0, 0, 0);
+	if (view == NULL)
+	{
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	HANDLE hEvent = OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName);
+	if (hEvent == NULL)
+	{
+		UnmapViewOfFile(view);
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	controller->XboxInputMapping = hMapping;
+	controller->XboxInputView = view;
+	controller->XboxInputEvent = hEvent;
+	return S_OK;
+}
+
+static DWORD WINAPI XboxFfbThreadProc(LPVOID param)
+{
+	DUO_CONTROLLER* controller = (DUO_CONTROLLER*)param;
+	HANDLE waitHandles[2] = { controller->XboxFfbStopEvent, controller->XboxOutputEvent };
+#ifdef _DEBUG
+	wprintf(L"[XboxFfb] FFB thread started, waiting for output events\n");
+#endif
+	while (1)
+	{
+		DWORD wr = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+		if (wr == WAIT_OBJECT_0)
+		{
+#ifdef _DEBUG
+			wprintf(L"[XboxFfb] FFB thread stopping (stop event signaled)\n");
+#endif
+			break;
+		}
+		if (wr == WAIT_OBJECT_0 + 1)
+		{
+			BYTE* outputMem = (BYTE*)controller->XboxOutputView;
+#ifdef _DEBUG
+			wprintf(L"[XboxFfb] Output event signaled! Raw bytes: [%02X %02X %02X %02X %02X %02X %02X %02X %02X]\n",
+				outputMem[0], outputMem[1], outputMem[2], outputMem[3],
+				outputMem[4], outputMem[5], outputMem[6], outputMem[7],
+				outputMem[8]);
+#endif
+			DUO_CONTROLLER_FORCE_FEEDBACK_REPORT ffReport;
+			ZeroMemory(&ffReport, sizeof(ffReport));
+			if (outputMem[0] == XB1_OUTPUT_REPORT_ID)
+			{
+				ffReport.Flags = outputMem[1];
+				ffReport.LeftTrigger = outputMem[2];
+				ffReport.RightTrigger = outputMem[3];
+				ffReport.LeftMotor = outputMem[4];
+				ffReport.RightMotor = outputMem[5];
+				ffReport.Duration = outputMem[6];
+				ffReport.StartDelay = outputMem[7];
+				ffReport.Loop = outputMem[8];
+#ifdef _DEBUG
+				wprintf(L"[XboxFfb] PID report! enable=0x%02X LeftMotor=%d RightMotor=%d LTrig=%d RTrig=%d Dur=%d StartDelay=%d Loop=%d\n",
+					ffReport.Flags, ffReport.LeftMotor, ffReport.RightMotor, ffReport.LeftTrigger, ffReport.RightTrigger,
+					ffReport.Duration, ffReport.StartDelay, ffReport.Loop);
+#endif
+			}
+#ifdef _DEBUG
+			else
+			{
+				wprintf(L"[XboxFfb] Report ID MISMATCH: expected 0x%02X, got 0x%02X\n", XB1_OUTPUT_REPORT_ID, outputMem[0]);
+			}
+#endif
+#pragma warning(suppress:4366)
+			EnterCriticalSection(&controller->XboxCs);
+			DuoController_VibrationReportCallback_t callback = controller->VibrationReportCallback;
+			void* context = controller->VibrationReportCallbackContext;
+#pragma warning(suppress:4366)
+			LeaveCriticalSection(&controller->XboxCs);
+			if (callback != NULL)
+			{
+#ifdef _DEBUG
+				wprintf(L"[XboxFfb] Invoking callback: LeftMotor=%d RightMotor=%d Flags=0x%02X\n",
+					ffReport.LeftMotor, ffReport.RightMotor, ffReport.Flags);
+#endif
+				callback(controller, &ffReport, context);
+			}
+#ifdef _DEBUG
+			else
+			{
+				wprintf(L"[XboxFfb] No callback registered!\n");
+			}
+#endif
+		}
+		else
+		{
+#ifdef _DEBUG
+			wprintf(L"[XboxFfb] WaitForMultipleObjects unexpected result: %d (GLE=%d)\n", wr, GetLastError());
+#endif
+		}
+	}
+	return 0;
+}
+
+static HRESULT XboxConnectFfb(DUO_CONTROLLER* controller)
+{
+	WCHAR sanitized[256];
+	SanitizeInstanceIdForPipeName(controller->XboxInstanceId, sanitized, ARRAYSIZE(sanitized));
+	WCHAR mappingName[512];
+	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_output", sanitized);
+	WCHAR eventName[512];
+	swprintf_s(eventName, ARRAYSIZE(eventName), L"Global\\Duo_%s_output_event", sanitized);
+#ifdef _DEBUG
+	wprintf(L"[XboxFfb] Connecting FFB: mapping=%s event=%s\n", mappingName, eventName);
+#endif
+	ULONGLONG startTime = GetTickCount64();
+	HANDLE hMapping = NULL;
+	while (GetTickCount64() - startTime < 1000)
+	{
+		hMapping = OpenFileMappingW(FILE_MAP_READ, FALSE, mappingName);
+		if (hMapping != NULL)
+			break;
+		Sleep(10);
+	}
+	if (hMapping == NULL)
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+	LPVOID view = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
+	if (view == NULL)
+	{
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	HANDLE hEvent = OpenEventW(SYNCHRONIZE, FALSE, eventName);
+	if (hEvent == NULL)
+	{
+		UnmapViewOfFile(view);
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+	controller->XboxOutputMapping = hMapping;
+	controller->XboxOutputView = view;
+	controller->XboxOutputEvent = hEvent;
+	controller->XboxFfbStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (!controller->XboxFfbStopEvent)
+	{
+		CloseHandle(hEvent);
+		UnmapViewOfFile(view);
+		CloseHandle(hMapping);
+		controller->XboxOutputEvent = NULL;
+		controller->XboxOutputView = NULL;
+		controller->XboxOutputMapping = NULL;
+		return HRESULT_FROM_WIN32(GetLastError());
+	}
+	controller->XboxFfbThread = CreateThread(NULL, 0, XboxFfbThreadProc, controller, 0, NULL);
+	if (!controller->XboxFfbThread)
+	{
+		CloseHandle(controller->XboxFfbStopEvent);
+		controller->XboxFfbStopEvent = NULL;
+		CloseHandle(hEvent);
+		controller->XboxOutputEvent = NULL;
+		UnmapViewOfFile(view);
+		controller->XboxOutputView = NULL;
+		CloseHandle(hMapping);
+		controller->XboxOutputMapping = NULL;
+		return HRESULT_FROM_WIN32(GetLastError());
+	}
+	return S_OK;
+}
+
+// ==================== Xbox debug shared memory ====================
+
+#ifdef _DEBUG
+static DWORD WINAPI XboxDebugThreadProc(LPVOID param)
+{
+	DUO_CONTROLLER* controller = (DUO_CONTROLLER*)param;
+	PDEBUG_RING_BUFFER ring = (PDEBUG_RING_BUFFER)controller->XboxDebugView;
+	if (ring == NULL)
+		return 1;
+
+	wprintf(L"[XboxDebug] Debug reader thread started\n");
+
+	LONG lastRead = 0;
+	while (WaitForSingleObject(controller->XboxDebugStopEvent, 100) == WAIT_TIMEOUT)
+	{
+		LONG writeIdx = ring->WriteIndex;
+		while (lastRead < writeIdx)
+		{
+			LONG slot = lastRead % DEBUG_MSG_SLOT_COUNT;
+			wprintf(L"  %hs\n", ring->Messages[slot]);
+			lastRead++;
+		}
+	}
+	return 0;
+}
+
+static HRESULT XboxConnectDebug(DUO_CONTROLLER* controller)
+{
+	WCHAR sanitized[256];
+	SanitizeInstanceIdForPipeName(controller->XboxInstanceId, sanitized, ARRAYSIZE(sanitized));
+	WCHAR mappingName[512];
+	swprintf_s(mappingName, ARRAYSIZE(mappingName), L"Global\\Duo_%s_debug", sanitized);
+
+	controller->XboxDebugMapping = NULL;
+	controller->XboxDebugView = NULL;
+	controller->XboxDebugThread = NULL;
+	controller->XboxDebugStopEvent = NULL;
+
+	ULONGLONG startTime = GetTickCount64();
+	HANDLE hMapping = NULL;
+	while (GetTickCount64() - startTime < 1000)
+	{
+		hMapping = OpenFileMappingW(FILE_MAP_READ, FALSE, mappingName);
+		if (hMapping != NULL)
+			break;
+		Sleep(10);
+	}
+	if (hMapping == NULL)
+	{
+		wprintf(L"[XboxDebug] Could not open debug shared memory: %s (error %d)\n", mappingName, GetLastError());
+		return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+	}
+	LPVOID view = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, DEBUG_SHM_SIZE);
+	if (view == NULL)
+	{
+		wprintf(L"[XboxDebug] MapViewOfFile failed: %d\n", GetLastError());
+		CloseHandle(hMapping);
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+
+	controller->XboxDebugMapping = hMapping;
+	controller->XboxDebugView = view;
+
+	controller->XboxDebugStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (controller->XboxDebugStopEvent == NULL)
+	{
+		UnmapViewOfFile(view);
+		controller->XboxDebugView = NULL;
+		CloseHandle(hMapping);
+		controller->XboxDebugMapping = NULL;
+		return DsWin32ErrorToHresult(GetLastError());
+	}
+
+	controller->XboxDebugThread = CreateThread(NULL, 0, XboxDebugThreadProc, controller, 0, NULL);
+	wprintf(L"[XboxDebug] Connected to debug shared memory: %s\n", mappingName);
+	return S_OK;
+}
+
+static void XboxDisconnectDebug(DUO_CONTROLLER* controller)
+{
+	if (controller->XboxDebugStopEvent != NULL)
+	{
+		SetEvent(controller->XboxDebugStopEvent);
+		if (controller->XboxDebugThread != NULL)
+		{
+			WaitForSingleObject(controller->XboxDebugThread, 2000);
+			CloseHandle(controller->XboxDebugThread);
+			controller->XboxDebugThread = NULL;
+		}
+		CloseHandle(controller->XboxDebugStopEvent);
+		controller->XboxDebugStopEvent = NULL;
+	}
+	if (controller->XboxDebugView != NULL)
+	{
+		UnmapViewOfFile(controller->XboxDebugView);
+		controller->XboxDebugView = NULL;
+	}
+	if (controller->XboxDebugMapping != NULL)
+	{
+		CloseHandle(controller->XboxDebugMapping);
+		controller->XboxDebugMapping = NULL;
+	}
+}
+#endif
+
+static void XboxDisconnectInput(DUO_CONTROLLER* controller)
+{
+	if (controller->XboxInputEvent != NULL)
+	{
+		CloseHandle(controller->XboxInputEvent);
+		controller->XboxInputEvent = NULL;
+	}
+	if (controller->XboxInputView != NULL)
+	{
+		UnmapViewOfFile(controller->XboxInputView);
+		controller->XboxInputView = NULL;
+	}
+	if (controller->XboxInputMapping != NULL)
+	{
+		CloseHandle(controller->XboxInputMapping);
+		controller->XboxInputMapping = NULL;
+	}
+}
+
+static void XboxDisconnectFfb(DUO_CONTROLLER* controller)
+{
+	if (controller->XboxFfbStopEvent != NULL)
+	{
+		SetEvent(controller->XboxFfbStopEvent);
+		if (controller->XboxFfbThread != NULL)
+		{
+			WaitForSingleObject(controller->XboxFfbThread, 1000);
+			CloseHandle(controller->XboxFfbThread);
+			controller->XboxFfbThread = NULL;
+		}
+		CloseHandle(controller->XboxFfbStopEvent);
+		controller->XboxFfbStopEvent = NULL;
+	}
+	if (controller->XboxOutputEvent != NULL)
+	{
+		CloseHandle(controller->XboxOutputEvent);
+		controller->XboxOutputEvent = NULL;
+	}
+	if (controller->XboxOutputView != NULL)
+	{
+		UnmapViewOfFile(controller->XboxOutputView);
+		controller->XboxOutputView = NULL;
+	}
+	if (controller->XboxOutputMapping != NULL)
+	{
+		CloseHandle(controller->XboxOutputMapping);
+		controller->XboxOutputMapping = NULL;
+	}
+}
+
+static HRESULT XboxSendRawInput(DUO_CONTROLLER* controller, const DUO_CONTROLLER_INPUT_REPORT_XBOX* state)
+{
+	if (controller->XboxInputView == NULL)
+		return HRESULT_FROM_WIN32(ERROR_PIPE_NOT_CONNECTED);
+	BYTE report[XB1_REPORT_SIZE];
+	ZeroMemory(report, XB1_REPORT_SIZE);
+	report[0] = XB1_INPUT_REPORT_ID;
+	memcpy(&report[1], &state->LeftStickHorizontal, sizeof(UINT16));
+	memcpy(&report[3], &state->LeftStickVertical, sizeof(UINT16));
+	memcpy(&report[5], &state->RightStickHorizontal, sizeof(UINT16));
+	memcpy(&report[7], &state->RightStickVertical, sizeof(UINT16));
+
+	// Left trigger Z (10-bit at bits 72-81 = bytes 9-10:0-1)
+	{
+		UINT16 zVal = (UINT16)state->LeftTrigger << 2;
+		report[9] = (BYTE)(zVal & 0xFF);
+		report[10] = (BYTE)((zVal >> 8) & 0x03);
+	}
+
+	// Right trigger Rz (10-bit at bits 88-97 = bytes 11-12:0-1)
+	{
+		UINT16 rzVal = (UINT16)state->RightTrigger << 2;
+		report[11] = (BYTE)(rzVal & 0xFF);
+		report[12] = (BYTE)((rzVal >> 8) & 0x03);
+	}
+
+	// DPad (0-8 in 45° increments clockwise)
+	report[13] = state->DPad;
+
+	// These work already
+	if (state->A)      report[14] |= (1 << XB1_BUTTON_A);
+	if (state->B)      report[14] |= (1 << XB1_BUTTON_B);
+	if (state->X)      report[14] |= (1 << XB1_BUTTON_X);
+	if (state->Y)      report[14] |= (1 << XB1_BUTTON_Y);
+	if (state->LeftBumper)  report[14] |= (1 << XB1_BUTTON_LB);
+	if (state->RightBumper) report[14] |= (1 << XB1_BUTTON_RB);
+	if (state->Back)   report[14] |= (1 << XB1_BUTTON_BACK);
+	if (state->Start)  report[14] |= (1 << XB1_BUTTON_START);
+	if (state->LeftStick)   report[15] |= (1 << (XB1_BUTTON_LSB - 8));
+	if (state->RightStick)  report[15] |= (1 << (XB1_BUTTON_RSB - 8));
+	if (state->Guide)  report[15] |= (1 << (XB1_BUTTON_GUIDE - 8));
+	if (state->Paddle1) report[15] |= (1 << (XB1_BUTTON_PADDLE1 - 8));
+	if (state->Paddle2) report[15] |= (1 << (XB1_BUTTON_PADDLE2 - 8));
+	if (state->Paddle3) report[15] |= (1 << (XB1_BUTTON_PADDLE3 - 8));
+	if (state->Paddle4) report[15] |= (1 << (XB1_BUTTON_PADDLE4 - 8));
+
+	BYTE* inputMem = (BYTE*)controller->XboxInputView;
+	inputMem[0] = INPUT_REPORT_FULL;
+	inputMem[1] = XB1_REPORT_SIZE;
+	memcpy(&inputMem[MESSAGE_HEADER_LEN], report, XB1_REPORT_SIZE);
+	if (!SetEvent(controller->XboxInputEvent))
+		return DsWin32ErrorToHresult(GetLastError());
+	return S_OK;
+}
+
+static HRESULT CreateXboxController(DUO_CONTROLLER* controller)
+{
+	WCHAR instanceId[256];
+	WCHAR hidInstanceId[256];
+	HRESULT result = InstallDuoControllerDevice(L"Root\\VID_045E&PID_02FF&IG_00", L"VID_045E&PID_02FF&DUOCONTROLLER", instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
+	if (FAILED(result))
+		return result;
+	wcscpy_s(controller->XboxInstanceId, ARRAYSIZE(controller->XboxInstanceId), instanceId);
+	wcscpy_s(controller->XboxHidInstanceId, ARRAYSIZE(controller->XboxHidInstanceId), hidInstanceId);
+	controller->XboxInputMapping = NULL;
+	controller->XboxOutputMapping = NULL;
+	controller->XboxInputView = NULL;
+	controller->XboxOutputView = NULL;
+	controller->XboxInputEvent = NULL;
+	controller->XboxOutputEvent = NULL;
+	controller->XboxFfbThread = NULL;
+	controller->XboxFfbStopEvent = NULL;
+#ifdef _DEBUG
+	controller->XboxDebugMapping = NULL;
+	controller->XboxDebugView = NULL;
+	controller->XboxDebugThread = NULL;
+	controller->XboxDebugStopEvent = NULL;
+#endif
+#pragma warning(suppress:4366)
+	InitializeCriticalSection(&controller->XboxCs);
+	result = XboxConnectInput(controller);
+	if (FAILED(result))
+	{
+#pragma warning(suppress:4366)
+		DeleteCriticalSection(&controller->XboxCs);
+		return result;
+	}
+	result = XboxConnectFfb(controller);
+	if (FAILED(result))
+	{
+		XboxDisconnectInput(controller);
+#pragma warning(suppress:4366)
+		DeleteCriticalSection(&controller->XboxCs);
+		return result;
+	}
+#ifdef _DEBUG
+	XboxConnectDebug(controller); // best-effort, non-fatal
+#endif
+	return S_OK;
+}
+
+static HRESULT RemoveXboxController(DUO_CONTROLLER* controller)
+{
+#ifdef _DEBUG
+	XboxDisconnectDebug(controller);
+#endif
+	XboxDisconnectFfb(controller);
+	XboxDisconnectInput(controller);
+#pragma warning(suppress:4366)
+	DeleteCriticalSection(&controller->XboxCs);
+	return RemoveDuoControllerDevice(controller->XboxInstanceId, controller->XboxHidInstanceId);
+}
+
+static HRESULT SendXboxReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REPORT_XBOX* inputReport)
+{
+#pragma warning(suppress:4366)
+	EnterCriticalSection(&controller->XboxCs);
+	HRESULT result = XboxSendRawInput(controller, inputReport);
+	if (SUCCEEDED(result))
+		controller->LastXboxInputReport = *inputReport;
+#pragma warning(suppress:4366)
+	LeaveCriticalSection(&controller->XboxCs);
+	return result;
+}
+
 // ==================== Exported API ====================
 
 HRESULT WINAPI DuoController_Initialize()
@@ -1064,71 +1377,7 @@ HRESULT WINAPI DuoController_Initialize()
 	InitializeWindowsRuntimeForCurrentThread();
 	if (!Initialized)
 	{
-		HMODULE xboxgipsynthetic = NULL;
-		if ((GetModuleHandleExW(0, L"xboxgipsynthetic.dll", &xboxgipsynthetic) && xboxgipsynthetic != NULL) || (xboxgipsynthetic = LoadLibraryExW(L"xboxgipsynthetic.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL)
-		{
-			HMODULE cfgmgr32 = NULL;
-			if ((GetModuleHandleExW(0, L"cfgmgr32.dll", &cfgmgr32) && cfgmgr32 != NULL) || (cfgmgr32 = LoadLibraryExW(L"cfgmgr32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL)
-			{
-				HMODULE ntdll = NULL;
-				if ((GetModuleHandleExW(0, L"ntdll.dll", &ntdll) && ntdll != NULL) || (ntdll = LoadLibraryExW(L"ntdll.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL)
-				{
-					SyntheticController_CreateController = (SyntheticController_CreateController_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_CreateController");
-					SyntheticController_SetTargetProcess = (SyntheticController_SetTargetProcess_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_SetTargetProcess");
-					SyntheticController_RegisterReportCallback = (SyntheticController_RegisterReportCallback_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_RegisterReportCallback");
-					SyntheticController_Connect = (SyntheticController_Connect_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_Connect");
-					SyntheticController_SendReport = (SyntheticController_SendReport_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_SendReport");
-					SyntheticController_Disconnect = (SyntheticController_Disconnect_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_Disconnect");
-					SyntheticController_UnregisterReportCallback = (SyntheticController_UnregisterReportCallback_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_UnregisterReportCallback");
-					SyntheticController_RemoveController = (SyntheticController_RemoveController_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_RemoveController");
-					SyntheticController_GetDeviceId = (SyntheticController_GetDeviceId_t)GetProcAddress(xboxgipsynthetic, "SyntheticController_GetDeviceId");
-					DevSetObjectProperties = (DevSetObjectProperties_t)GetProcAddress(cfgmgr32, "DevSetObjectProperties");
-					RtlPublishWnfStateData = (RtlPublishWnfStateData_t)GetProcAddress(ntdll, "RtlPublishWnfStateData");
-					if (SyntheticController_CreateController != NULL &&
-						SyntheticController_SetTargetProcess != NULL &&
-						SyntheticController_RegisterReportCallback &&
-						SyntheticController_Connect != NULL &&
-						SyntheticController_SendReport != NULL &&
-						SyntheticController_Disconnect != NULL &&
-						SyntheticController_UnregisterReportCallback != NULL &&
-						SyntheticController_RemoveController != NULL &&
-						SyntheticController_GetDeviceId != NULL &&
-						DevSetObjectProperties != NULL)
-					{
-						Initialized = TRUE;
-					}
-					else
-					{
-						result = E_NOINTERFACE;
-					}
-					if (result != S_OK)
-					{
-						FreeLibrary(xboxgipsynthetic);
-						SyntheticController_CreateController = NULL;
-						SyntheticController_SetTargetProcess = NULL;
-						SyntheticController_RegisterReportCallback = NULL;
-						SyntheticController_Connect = NULL;
-						SyntheticController_SendReport = NULL;
-						SyntheticController_Disconnect = NULL;
-						SyntheticController_UnregisterReportCallback = NULL;
-						SyntheticController_RemoveController = NULL;
-						SyntheticController_GetDeviceId = NULL;
-					}
-				}
-				else
-				{
-					result = HRESULT_FROM_WIN32(GetLastError());
-				}
-			}
-			else
-			{
-				result = HRESULT_FROM_WIN32(GetLastError());
-			}
-		}
-		else
-		{
-			result = HRESULT_FROM_WIN32(GetLastError());
-		}
+		Initialized = TRUE;
 	}
 	return result;
 }
@@ -1143,12 +1392,6 @@ HRESULT WINAPI DuoController_Uninitialize()
 		{
 			DuoController_RemoveController(Controllers[0]);
 		}
-		HMODULE xboxgipsynthetic = NULL;
-		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, L"xboxgipsynthetic.dll", &xboxgipsynthetic) && xboxgipsynthetic != NULL)
-			FreeLibrary(xboxgipsynthetic);
-		HMODULE cfgmgr32 = NULL;
-		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, L"cfgmgr32.dll", &cfgmgr32) && cfgmgr32 != NULL)
-			FreeLibrary(cfgmgr32);
 		Initialized = FALSE;
 	}
 	else
@@ -1175,61 +1418,24 @@ HRESULT WINAPI DuoController_CreateController(DUO_CONTROLLER_TYPE controllerType
 				newController->VibrationReportCallbackContext = vibrationCallbackContext;
 				if (controllerType == DuoControllerTypeXbox)
 				{
-					newController->SyntheticHandle = NULL;
-					newController->DeviceQuery = NULL;
 					ZeroMemory(&newController->LastXboxInputReport, sizeof(newController->LastXboxInputReport));
-#pragma warning(suppress:4366)
-					if ((result = SyntheticController_CreateController(SyntheticControllerTypeExtendedGamepad, &newController->SyntheticHandle)) == S_OK)
+					result = CreateXboxController(newController);
+					if (SUCCEEDED(result))
 					{
-						unsigned long long deviceId = 0;
-						if (SyntheticController_GetDeviceId(newController->SyntheticHandle, &deviceId) == S_OK)
+						DUO_CONTROLLER** newControllers = (DUO_CONTROLLER**)realloc(Controllers, sizeof(DUO_CONTROLLER*) * (ControllerCount + 1));
+						if (newControllers)
 						{
-							DWORD deviceIdSuffixBufferSize = 128;
-							WCHAR* deviceIdSuffix = (WCHAR*)malloc(deviceIdSuffixBufferSize * sizeof(WCHAR));
-							if (deviceIdSuffix != NULL)
-							{
-								swprintf_s(deviceIdSuffix, deviceIdSuffixBufferSize, L"&%016llX", deviceId);
-								DEVPROP_FILTER_EXPRESSION ObjectFilter[] =
-								{
-									{ DEVPROP_OPERATOR_OR_OPEN },
-									{ DEVPROP_OPERATOR_ENDS_WITH_IGNORE_CASE, { { DEVPKEY_Device_InstanceId, DEVPROP_STORE_SYSTEM, NULL }, DEVPROP_TYPE_STRING, ((ULONG)wcslen(deviceIdSuffix) + 1) * sizeof(WCHAR), (BYTE*)deviceIdSuffix } },
-									{ DEVPROP_OPERATOR_ENDS_WITH_IGNORE_CASE, { { DEVPKEY_Device_Parent, DEVPROP_STORE_SYSTEM, NULL }, DEVPROP_TYPE_STRING, ((ULONG)wcslen(deviceIdSuffix) + 1) * sizeof(WCHAR), (BYTE*)deviceIdSuffix } },
-									{ DEVPROP_OPERATOR_OR_CLOSE }
-								};
-#pragma warning(suppress:4366)
-								if ((result = DevCreateObjectQuery(DevObjectTypeDevice, DevQueryFlagUpdateResults, 0, NULL, ARRAYSIZE(ObjectFilter), ObjectFilter, DuoController_DeviceChanged, NULL, &newController->DeviceQuery)) == S_OK)
-								{
-									if ((result = SyntheticController_RegisterReportCallback(newController->SyntheticHandle, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER, DuoController_OutputReportReceived, newController)) == S_OK)
-									{
-										if ((result = SyntheticController_Connect(newController->SyntheticHandle)) == S_OK)
-										{
-											DUO_CONTROLLER** newControllers = (DUO_CONTROLLER**)realloc(Controllers, sizeof(DUO_CONTROLLER*) * (ControllerCount + 1));
-											if (newControllers)
-											{
-												Controllers = newControllers;
-												Controllers[ControllerCount++] = newController;
-												*controller = newController;
-												Sleep(1000);
-												DuoController_SendReport(newController, &newController->LastXboxInputReport);
-											}
-											else
-											{
-												result = E_OUTOFMEMORY;
-											}
-											if (result != S_OK)
-												SyntheticController_Disconnect(newController->SyntheticHandle);
-										}
-										if (result != S_OK)
-											SyntheticController_UnregisterReportCallback(newController->SyntheticHandle, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER);
-									}
-									if (result != S_OK)
-										DevCloseObjectQuery(newController->DeviceQuery);
-								}
-								free(deviceIdSuffix);
-							}
+							Controllers = newControllers;
+							Controllers[ControllerCount++] = newController;
+							*controller = newController;
+							Sleep(1000);
+							DuoController_SendReport(newController, &newController->LastXboxInputReport);
 						}
-						if (result != S_OK)
-							SyntheticController_RemoveController(newController->SyntheticHandle);
+						else
+						{
+							RemoveXboxController(newController);
+							result = E_OUTOFMEMORY;
+						}
 					}
 				}
 				else if (controllerType == DuoControllerTypeDualShock4)
@@ -1325,10 +1531,7 @@ HRESULT WINAPI DuoController_RemoveController(void* controller)
 				}
 				if (duoController->Type == DuoControllerTypeXbox)
 				{
-					SyntheticController_Disconnect(duoController->SyntheticHandle);
-					SyntheticController_UnregisterReportCallback(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_OUTPUT_REPORT_TYPE_CONTROLLER);
-					DevCloseObjectQuery(duoController->DeviceQuery);
-					SyntheticController_RemoveController(duoController->SyntheticHandle);
+					RemoveXboxController(duoController);
 				}
 				else if (duoController->Type == DuoControllerTypeDualSenseEdge || duoController->Type == DuoControllerTypeDualSense)
 				{
@@ -1362,15 +1565,7 @@ HRESULT WINAPI DuoController_SendReport(void* controller, void* inputReport)
 			DUO_CONTROLLER* duoController = (DUO_CONTROLLER*)controller;
 			if (duoController->Type == DuoControllerTypeXbox)
 			{
-				DUO_CONTROLLER_INPUT_REPORT_XBOX* xboxReport = (DUO_CONTROLLER_INPUT_REPORT_XBOX*)inputReport;
-				if ((result = SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_EXTENDED_CONTROLLER, xboxReport, sizeof(DUO_CONTROLLER_INPUT_REPORT_XBOX))) == S_OK)
-				{
-					SYNTHETIC_CONTROLLER_VKEY_INPUT_REPORT guideButtonInputReport;
-					memset(&guideButtonInputReport, 0, sizeof(guideButtonInputReport));
-					guideButtonInputReport.State = xboxReport->Guide;
-					SyntheticController_SendReport(duoController->SyntheticHandle, SYNTHETIC_CONTROLLER_INPUT_REPORT_TYPE_VKEY, &guideButtonInputReport, sizeof(guideButtonInputReport));
-					duoController->LastXboxInputReport = *xboxReport;
-				}
+				result = SendXboxReport(duoController, (DUO_CONTROLLER_INPUT_REPORT_XBOX*)inputReport);
 			}
 			else if (duoController->Type == DuoControllerTypeDualSenseEdge || duoController->Type == DuoControllerTypeDualSense)
 			{

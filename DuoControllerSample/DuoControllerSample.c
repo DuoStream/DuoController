@@ -1,6 +1,9 @@
 #include "../DuoController/DuoController.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <initguid.h>
+#include <cfgmgr32.h>
+#include <SetupAPI.h>
 
 typedef HRESULT (*DuoController_Initialize_t)();
 typedef HRESULT (*DuoController_Uninitialize_t)();
@@ -9,11 +12,16 @@ typedef HRESULT(*DuoController_RemoveController_t)(void* controller);
 typedef HRESULT(*DuoController_SendReport_t)(void* controller, void* inputReport);
 
 /// <summary>
+/// The DuoController device class GUID.
+/// </summary>
+DEFINE_GUID(GUID_DEVCLASS_DUOCONTROLLER, 0x070d9ff9, 0x4f04, 0x4419, 0x90, 0xd2, 0xc4, 0xca, 0x9d, 0xfd, 0xb2, 0xee);
+
+/// <summary>
 /// Receives vibration reports from the Duo controller.
 /// </summary>
 void VibrationReportCallback(void* controller, DUO_CONTROLLER_FORCE_FEEDBACK_REPORT* report, void* context)
 {
-	wprintf(L"Vibration report received: LeftMotor=%d, RightMotor=%d, Duration=%d, Delay=%d, Repeat=%d\n", report->LeftMotor, report->RightMotor, report->Duration, report->Delay, report->Repeat);
+	wprintf(L"Vibration report received: Flags=%d, LeftTrigger=%d, RightTrigger=%d, LeftMotor=%d, RightMotor=%d, Duration=%d, StartDelay=%d, Loop=%d\n", report->Flags, report->LeftTrigger, report->RightTrigger, report->LeftMotor, report->RightMotor, report->Duration, report->StartDelay, report->Loop);
 }
 
 /// <summary>
@@ -54,20 +62,17 @@ static void RunXboxLoop(void* controller, DuoController_SendReport_t sendReport)
 		else if (strcmp(buttonName, "B") == 0)              inputReport.B = buttonState;
 		else if (strcmp(buttonName, "X") == 0)              inputReport.X = buttonState;
 		else if (strcmp(buttonName, "Y") == 0)              inputReport.Y = buttonState;
-		else if (strcmp(buttonName, "DPadUp") == 0)         inputReport.DPadUp = buttonState;
-		else if (strcmp(buttonName, "DPadDown") == 0)       inputReport.DPadDown = buttonState;
-		else if (strcmp(buttonName, "DPadLeft") == 0)       inputReport.DPadLeft = buttonState;
-		else if (strcmp(buttonName, "DPadRight") == 0)      inputReport.DPadRight = buttonState;
+		else if (strcmp(buttonName, "DPad") == 0)         inputReport.DPad = buttonState;
 		else if (strcmp(buttonName, "LeftBumper") == 0)     inputReport.LeftBumper = buttonState;
 		else if (strcmp(buttonName, "RightBumper") == 0)    inputReport.RightBumper = buttonState;
 		else if (strcmp(buttonName, "LeftStick") == 0)      inputReport.LeftStick = buttonState;
 		else if (strcmp(buttonName, "RightStick") == 0)     inputReport.RightStick = buttonState;
-		else if (strcmp(buttonName, "LeftTrigger") == 0)    inputReport.LeftTrigger = (BYTE)buttonState;
-		else if (strcmp(buttonName, "RightTrigger") == 0)   inputReport.RightTrigger = (BYTE)buttonState;
-		else if (strcmp(buttonName, "LeftStickHorizontal") == 0)  inputReport.LeftStickHorizontal = (SHORT)buttonState;
-		else if (strcmp(buttonName, "LeftStickVertical") == 0)    inputReport.LeftStickVertical = (SHORT)buttonState;
-		else if (strcmp(buttonName, "RightStickHorizontal") == 0) inputReport.RightStickHorizontal = (SHORT)buttonState;
-		else if (strcmp(buttonName, "RightStickVertical") == 0)   inputReport.RightStickVertical = (SHORT)buttonState;
+		else if (strcmp(buttonName, "LeftTrigger") == 0)    inputReport.LeftTrigger = buttonState;
+		else if (strcmp(buttonName, "RightTrigger") == 0)   inputReport.RightTrigger = buttonState;
+		else if (strcmp(buttonName, "LeftStickHorizontal") == 0)  inputReport.LeftStickHorizontal = buttonState;
+		else if (strcmp(buttonName, "LeftStickVertical") == 0)    inputReport.LeftStickVertical = buttonState;
+		else if (strcmp(buttonName, "RightStickHorizontal") == 0) inputReport.RightStickHorizontal = buttonState;
+		else if (strcmp(buttonName, "RightStickVertical") == 0)   inputReport.RightStickVertical = buttonState;
 		else if (strcmp(buttonName, "Paddle1") == 0) inputReport.Paddle1 = buttonState;
 		else if (strcmp(buttonName, "Paddle2") == 0) inputReport.Paddle2 = buttonState;
 		else if (strcmp(buttonName, "Paddle3") == 0) inputReport.Paddle3 = buttonState;
@@ -249,6 +254,52 @@ static void RunDs4Loop(void* controller, DuoController_SendReport_t sendReport)
 }
 
 /// <summary>
+/// Removes the DuoController driver INF from the driver store.
+/// </summary>
+static void UninstallDuoControllerDriver()
+{
+	WCHAR infDir[MAX_PATH];
+	if (!GetWindowsDirectoryW(infDir, MAX_PATH))
+		return;
+
+	wcscat_s(infDir, MAX_PATH, L"\\INF");
+
+	WCHAR searchPath[MAX_PATH + 8];
+	wcscpy_s(searchPath, MAX_PATH + 8, infDir);
+	wcscat_s(searchPath, MAX_PATH + 8, L"\\oem*.inf");
+
+	WIN32_FIND_DATAW ffd;
+	HANDLE hFind = FindFirstFileW(searchPath, &ffd);
+	if (hFind == INVALID_HANDLE_VALUE)
+		return;
+
+	do
+	{
+		WCHAR fullPath[MAX_PATH];
+		wcscpy_s(fullPath, MAX_PATH, infDir);
+		wcscat_s(fullPath, MAX_PATH, L"\\");
+		wcscat_s(fullPath, MAX_PATH, ffd.cFileName);
+
+		GUID infGuid;
+		WCHAR className[MAX_CLASS_NAME_LEN];
+		DWORD requiredSize = 0;
+
+		if (SetupDiGetINFClassW(fullPath, &infGuid, className, MAX_CLASS_NAME_LEN, &requiredSize))
+		{
+			if (IsEqualGUID(&infGuid, &GUID_DEVCLASS_DUOCONTROLLER))
+			{
+				if (SetupUninstallOEMInfW(ffd.cFileName, SUOI_FORCEDELETE, NULL))
+				{
+					wprintf(L"Uninstalled DuoController driver INF: %s\n", ffd.cFileName);
+				}
+			}
+		}
+	} while (FindNextFileW(hFind, &ffd) != 0);
+
+	FindClose(hFind);
+}
+
+/// <summary>
 /// The sample entry point.
 /// </summary>
 int main(int argc, char* argv[])
@@ -323,6 +374,8 @@ int main(int argc, char* argv[])
 	DuoController_RemoveController_Dynamic(controller);
 	DuoController_Uninitialize_Dynamic();
 	FreeLibrary(duoController);
+
+	UninstallDuoControllerDriver();
 
 	return S_OK;
 }

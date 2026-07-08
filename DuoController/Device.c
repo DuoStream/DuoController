@@ -411,6 +411,143 @@ HID_DESCRIPTOR G_Ds4HidDescriptor = {
 	}
 };
 
+// Xbox One compatible HID report descriptor (PID 0x02FF)
+// This descriptor presents a standard report descriptor that xinputhid.sys will recognize.
+HID_REPORT_DESCRIPTOR G_XboxReportDescriptor[] = {
+	0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
+	0x09, 0x05,        // Usage (Game Pad)
+	0xA1, 0x01,        // Collection (Application)
+	0x85, XB1_INPUT_REPORT_ID, //   Report ID (1)
+
+	// Left thumbstick X, Y (16-bit signed)
+	0x09, 0x30,        //   Usage (X)
+	0x09, 0x31,        //   Usage (Y)
+	0x16, 0x00, 0x80,  //   Logical Minimum (-32768)
+	0x26, 0xFF, 0x7F,  //   Logical Maximum (32767)
+	0x75, 0x10,        //   Report Size (16)
+	0x95, 0x02,        //   Report Count (2)
+	0x81, 0x02,        //   Input (Data,Var,Abs)
+
+	// Right thumbstick Rx, Ry (16-bit signed)
+	0x09, 0x33,        //   Usage (Rx)
+	0x09, 0x34,        //   Usage (Ry)
+	0x16, 0x00, 0x80,  //   Logical Minimum (-32768)
+	0x26, 0xFF, 0x7F,  //   Logical Maximum (32767)
+	0x75, 0x10,        //   Report Size (16)
+	0x95, 0x02,        //   Report Count (2)
+	0x81, 0x02,        //   Input (Data,Var,Abs)
+
+	// Left trigger Z (10-bit unsigned)
+	0x09, 0x32,        //   Usage (Z)
+	0x15, 0x00,        //   Logical Minimum (0)
+	0x26, 0xFF, 0x03,  //   Logical Maximum (1023)
+	0x75, 0x0A,        //   Report Size (10)
+	0x95, 0x01,        //   Report Count (1)
+	0x81, 0x02,        //   Input (Data,Var,Abs)
+
+	// Padding (6 bits)
+	0x75, 0x06,        //   Report Size (6)
+	0x95, 0x01,        //   Report Count (1)
+	0x81, 0x03,        //   Input (Cnst,Var,Abs)
+
+	// Right trigger Rz (10-bit unsigned)
+	0x09, 0x35,        //   Usage (Rz)
+	0x15, 0x00,        //   Logical Minimum (0)
+	0x26, 0xFF, 0x03,  //   Logical Maximum (1023)
+	0x75, 0x0A,        //   Report Size (10)
+	0x95, 0x01,        //   Report Count (1)
+	0x81, 0x02,        //   Input (Data,Var,Abs)
+
+	// Padding (6 bits)
+	0x75, 0x06,        //   Report Size (6)
+	0x95, 0x01,        //   Report Count (1)
+	0x81, 0x03,        //   Input (Cnst,Var,Abs)
+
+	// D-Pad (Hat Switch)
+	0x05, 0x01,        //   Usage Page (Generic Desktop Ctrls)
+	0x09, 0x39,        //   Usage (Hat switch)
+	0x15, 0x00,        //   Logical Minimum (0)
+	0x25, 0x07,        //   Logical Maximum (7)
+	0x35, 0x00,        //   Physical Minimum (0)
+	0x46, 0x3B, 0x01,  //   Physical Maximum (315)
+	0x65, 0x14,        //   Unit (Eng Rot:Angular Pos)
+	0x75, 0x08,        //   Report Size (8)
+	0x95, 0x01,        //   Report Count (1)
+	0x81, 0x42,        //   Input (Data,Var,Abs,Null)
+	0x65, 0x00,        //   Unit (None)
+
+	// 15 buttons: A, B, X, Y, LB, RB, Back, Start, Guide, LSB, RSB, Paddle1, Paddle2, Paddle3, Paddle4
+	0x05, 0x09,        //   Usage Page (Button)
+	0x19, 0x01,        //   Usage Minimum (1)
+	0x29, 0x0F,        //   Usage Maximum (15)
+	0x15, 0x00,        //   Logical Minimum (0)
+	0x25, 0x01,        //   Logical Maximum (1)
+	0x75, 0x01,        //   Report Size (1)
+	0x95, 0x0F,        //   Report Count (15)
+	0x81, 0x02,        //   Input (Data,Var,Abs)
+
+	// Padding to 16-bit button boundary (1 bit)
+	0x75, 0x01,        //   Report Size (1)
+	0x95, 0x01,        //   Report Count (1)
+	0x81, 0x03,        //   Input (Cnst,Var,Abs)
+
+	// Vendor padding to fill 64-byte report
+	0x06, 0x00, 0xFF,  //   Usage Page (Vendor Defined 0xFF00)
+	0x09, 0x20,        //   Usage (0x20)
+	0x75, 0x08,        //   Report Size (8)
+	0x95, 0x2E,        //   Report Count (46)
+	0x81, 0x02,        //   Input (Data,Var,Abs)
+
+	// Output report for force feedback (HID PID Set Effect Report)
+	0x05, 0x0F,        //   Usage Page (Physical Interface Device)
+	0x09, 0x21,        //   Usage (Set Effect Report)
+	0x85, XB1_OUTPUT_REPORT_ID,        //   Report ID (3)
+	0xA1, 0x02,        //   Collection (Logical)
+	0x09, 0x97,        //     Usage (DC Enable Actuators)
+	0x15, 0x00,        //     Logical Minimum (0)
+	0x25, 0x01,        //     Logical Maximum (1)
+	0x75, 0x04,        //     Report Size (4)
+	0x95, 0x01,        //     Report Count (1)
+	0x91, 0x02,        //     Output (Data,Var,Abs)
+	0x75, 0x04,        //     Report Size (4)
+	0x95, 0x01,        //     Report Count (1)
+	0x91, 0x03,        //     Output (Cnst,Var,Abs)
+	0x09, 0x70,        //     Usage (Magnitude)
+	0x15, 0x00,        //     Logical Minimum (0)
+	0x25, 0x64,        //     Logical Maximum (100)
+	0x75, 0x08,        //     Report Size (8)
+	0x95, 0x04,        //     Report Count (4)
+	0x91, 0x02,        //     Output (Data,Var,Abs)
+	0x09, 0x50,        //     Usage (Duration)
+	0x66, 0x01, 0x10,  //     Unit (Seconds)
+	0x55, 0x0E,        //     Unit Exponent (-2)
+	0x15, 0x00,        //     Logical Minimum (0)
+	0x26, 0xFF, 0x00,  //     Logical Maximum (255)
+	0x95, 0x01,        //     Report Count (1)
+	0x91, 0x02,        //     Output (Data,Var,Abs)
+	0x09, 0xA7,        //     Usage (Start Delay)
+	0x91, 0x02,        //     Output (Data,Var,Abs)
+	0x65, 0x00,        //     Unit (None)
+	0x55, 0x00,        //     Unit Exponent (0)
+	0x09, 0x7C,        //     Usage (Loop Count)
+	0x91, 0x02,        //     Output (Data,Var,Abs)
+	0xC0,              //   End Collection
+
+	0xC0               // End Collection
+};
+
+HID_DESCRIPTOR G_XboxHidDescriptor = {
+	0x09,   // length of HID descriptor
+	0x21,   // descriptor type == HID  0x21
+	0x0100, // hid spec release
+	0x00,   // country code == Not Specified
+	0x01,   // number of HID class descriptors
+	{                                       //DescriptorList[0]
+		0x22,                               //report descriptor type 0x22
+		sizeof(G_XboxReportDescriptor)      //total length of report descriptor
+	}
+};
+
 /// <summary>
 /// Parses the PID from a device instance ID string.
 /// Instance ID format: ROOT\VID_054C&PID_XXXX&DUOCONTROLLER\0000
@@ -554,9 +691,13 @@ NTSTATUS DuoControllerCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 			{
 				deviceContext->ControllerSubType = DuoControllerSubTypeDualShock4;
 			}
+			else if (pid == 0x02FF)
+			{
+				deviceContext->ControllerSubType = DuoControllerSubTypeXbox;
+			}
 			else
 			{
-				deviceContext->ControllerSubType = DuoControllerSubTypeDualSenseEdge;
+				deviceContext->ControllerSubType = DuoControllerSubTypeDualSense;
 			}
 
 			// Keep PID for product-string selection in Ioctl.c
@@ -582,32 +723,45 @@ NTSTATUS DuoControllerCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 		}
 
 		// Configure device attributes, descriptor, and defaults based on controller sub type
-		deviceContext->HidDeviceAttributes.VendorID = HID_DEVICE_VID;
-		deviceContext->HidDeviceAttributes.VersionNumber = HID_DEVICE_VERSION;
-
-		if (deviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
+		if (deviceContext->ControllerSubType == DuoControllerSubTypeXbox)
 		{
-			SetDefaultDs4Report(deviceContext->DsInputReport);
+			deviceContext->HidDeviceAttributes.VendorID = HID_DEVICE_VID_MICROSOFT;
+			deviceContext->HidDeviceAttributes.VersionNumber = HID_DEVICE_VERSION;
 
-			RtlZeroMemory(&deviceContext->DsOutputReport, sizeof(DS4_OUTPUT_REPORT));
+			SetDefaultXboxReport(deviceContext->InputReport);
 
-			deviceContext->HidDescriptor = G_Ds4HidDescriptor;
-			deviceContext->ReportDescriptor = G_Ds4ReportDescriptor;
+			deviceContext->HidDescriptor = G_XboxHidDescriptor;
+			deviceContext->ReportDescriptor = G_XboxReportDescriptor;
 		}
 		else
 		{
-			SetDefaultDsReport(deviceContext->DsInputReport);
+			deviceContext->HidDeviceAttributes.VendorID = HID_DEVICE_VID_SONY;
+			deviceContext->HidDeviceAttributes.VersionNumber = HID_DEVICE_VERSION;
 
-			RtlZeroMemory(&deviceContext->DsOutputReport, sizeof(DS_OUTPUT_REPORT));
+			if (deviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
+			{
+				SetDefaultDs4Report(deviceContext->InputReport);
 
-			deviceContext->HidDescriptor = G_DsHidDescriptor;
-			deviceContext->ReportDescriptor = G_DsReportDescriptor;
-		}
+				RtlZeroMemory(&deviceContext->DsOutputReport, sizeof(DS4_OUTPUT_REPORT));
 
-		// If PID wasn't set from instance ID (e.g. zero), default to 0x0DF2
-		if (deviceContext->HidDeviceAttributes.ProductID == 0)
-		{
-			deviceContext->HidDeviceAttributes.ProductID = 0x0DF2;
+				deviceContext->HidDescriptor = G_Ds4HidDescriptor;
+				deviceContext->ReportDescriptor = G_Ds4ReportDescriptor;
+			}
+			else
+			{
+				SetDefaultDsReport(deviceContext->InputReport);
+
+				RtlZeroMemory(&deviceContext->DsOutputReport, sizeof(DS_OUTPUT_REPORT));
+
+				deviceContext->HidDescriptor = G_DsHidDescriptor;
+				deviceContext->ReportDescriptor = G_DsReportDescriptor;
+			}
+
+			// If PID wasn't set from instance ID (e.g. zero), default to 0x0DF2
+			if (deviceContext->HidDeviceAttributes.ProductID == 0)
+			{
+				deviceContext->HidDeviceAttributes.ProductID = 0x0DF2;
+			}
 		}
 
 		// Create a device interface so that applications can find and talk to us

@@ -20,4 +20,7 @@ VOID SetDefaultDsReport(_Out_ PUCHAR Report);
 // Sets the DualShock 4 input report to default (neutral) values.
 VOID SetDefaultDs4Report(_Out_ PUCHAR Report);
 
+// Sets the Xbox input report to default (neutral) values.
+VOID SetDefaultXboxReport(_Out_ PUCHAR Report);
+
 EXTERN_C_END

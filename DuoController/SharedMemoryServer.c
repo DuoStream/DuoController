@@ -14,6 +14,7 @@
 
 #include "Driver.h"
 #include "SharedMemoryServer.tmh"
+#include <stdarg.h>
 
 // Size of the input shared memory region: header (2) + controller report (64)
 #define INPUT_SHM_SIZE (MESSAGE_HEADER_LEN + DS_REPORT_SIZE) // same for DS4
@@ -28,6 +29,7 @@
 #define SHM_OUTPUT_SUFFIX L"output"
 #define SHM_INPUT_EVENT_SUFFIX L"input_event"
 #define SHM_OUTPUT_EVENT_SUFFIX L"output_event"
+#define SHM_DEBUG_SUFFIX L"debug"
 
 #define SHM_NAME_BUFFER_SIZE 512
 
@@ -273,6 +275,47 @@ DWORD CreateSharedMemoryServer(LPVOID Params)
 		return 1;
 	}
 
+#ifdef _DEBUG
+	// Create debug shared memory
+	{
+		res = swprintf_s(attr->DebugMemName,
+			SHM_NAME_BUFFER_SIZE,
+			SHM_NAME_FORMAT,
+			SHM_NAMESPACE_PREFIX,
+			sanitizedInstanceId,
+			SHM_DEBUG_SUFFIX);
+
+		if (res > 0)
+		{
+			attr->DebugMappingHandle = CreateFileMappingW(
+				INVALID_HANDLE_VALUE,
+				pSa,
+				PAGE_READWRITE,
+				0,
+				DEBUG_SHM_SIZE,
+				attr->DebugMemName);
+
+			if (attr->DebugMappingHandle != NULL)
+			{
+				attr->DebugView = MapViewOfFile(
+					attr->DebugMappingHandle,
+					FILE_MAP_ALL_ACCESS,
+					0,
+					0,
+					DEBUG_SHM_SIZE);
+
+				if (attr->DebugView != NULL)
+				{
+					PDEBUG_RING_BUFFER ring = (PDEBUG_RING_BUFFER)attr->DebugView;
+					ring->WriteIndex = 0;
+					ring->ReadIndex = 0;
+					ZeroMemory(ring->Messages, sizeof(ring->Messages));
+				}
+			}
+		}
+	}
+#endif
+
 	// Start the input shared memory thread
 	attr->InputThreadHandle = CreateThread(
 		NULL,
@@ -363,23 +406,23 @@ DWORD WINAPI InputSharedMemoryThread(LPVOID Params)
 
 			switch (buffer[0])
 			{
-			case DS_INPUT_REPORT_FULL: // same message type for DS4
+			case INPUT_REPORT_FULL: // same message type for all controller types
 			{
-				if (buffer[1] != DS_REPORT_SIZE) // DS4_REPORT_SIZE is also 64
+				if (buffer[1] != DS_REPORT_SIZE && buffer[1] != XB1_REPORT_SIZE)
 				{
 					TraceEvents(TRACE_LEVEL_ERROR, TRACE_PIPE,
-						"DS_INPUT_REPORT has incorrect size. Expected: %d, Received: %d\n",
+						"INPUT_REPORT_FULL has incorrect size. Expected: %d, Received: %d\n",
 						DS_REPORT_SIZE,
 						buffer[1]
 					);
 					break;
 				}
 
-				RtlCopyMemory(queueContext->DeviceContext->DsInputReport,
+				RtlCopyMemory(queueContext->DeviceContext->InputReport,
 					&buffer[MESSAGE_HEADER_LEN],
 					DS_REPORT_SIZE); // both DS and DS4 use 64-byte reports
 
-				CompleteReadRequest(devContext, DS_INPUT_REPORT_FULL);
+				CompleteReadRequest(devContext, INPUT_REPORT_FULL);
 				break;
 			}
 			default:
@@ -395,6 +438,40 @@ DWORD WINAPI InputSharedMemoryThread(LPVOID Params)
 
 	return 0;
 }
+
+/// <summary>
+/// Writes a debug log message to the debug shared memory ring buffer.
+/// Uses lock-free SPSC ring buffer: driver is the single writer, client is the single reader.
+/// </summary>
+/// <param name="devContext">The device context containing the debug shared memory.</param>
+/// <param name="Format"> printf-style format string.</param>
+#ifdef _DEBUG
+VOID WriteDebugLog(PDEVICE_CONTEXT devContext, const char* Format, ...)
+{
+	PSHARED_MEMORY_SERVER_ATTRIBUTES attr = &devContext->SharedMemServerAttributes;
+	if (attr->DebugView == NULL)
+		return;
+
+	PDEBUG_RING_BUFFER ring = (PDEBUG_RING_BUFFER)attr->DebugView;
+	LONG writeIdx = ring->WriteIndex;
+	LONG readIdx = ring->ReadIndex;
+
+	// If ring is full (all slots used), drop the message
+	if (writeIdx - readIdx >= DEBUG_MSG_SLOT_COUNT)
+		return;
+
+	char slotBuf[DEBUG_MSG_SLOT_SIZE];
+	va_list args;
+	va_start(args, Format);
+	_vsnprintf_s(slotBuf, sizeof(slotBuf), _TRUNCATE, Format, args);
+	va_end(args);
+
+	LONG slot = writeIdx % DEBUG_MSG_SLOT_COUNT;
+	strncpy_s(ring->Messages[slot], DEBUG_MSG_SLOT_SIZE, slotBuf, _TRUNCATE);
+	// Memory barrier: ensure the message is visible before advancing the index
+	InterlockedExchange(&ring->WriteIndex, writeIdx + 1);
+}
+#endif
 
 /// <summary>
 /// Writes the current output report (force feedback data for DS/DS4) to the shared
@@ -468,6 +545,14 @@ VOID ShutdownSharedMemoryServer(PDEVICE_CONTEXT devContext)
 		attr->OutputView = NULL;
 	}
 
+#ifdef _DEBUG
+	if (attr->DebugView != NULL)
+	{
+		UnmapViewOfFile(attr->DebugView);
+		attr->DebugView = NULL;
+	}
+#endif
+
 	// Close mapping handles
 	if (attr->InputMappingHandle != NULL)
 	{
@@ -480,6 +565,14 @@ VOID ShutdownSharedMemoryServer(PDEVICE_CONTEXT devContext)
 		CloseHandle(attr->OutputMappingHandle);
 		attr->OutputMappingHandle = NULL;
 	}
+
+#ifdef _DEBUG
+	if (attr->DebugMappingHandle != NULL)
+	{
+		CloseHandle(attr->DebugMappingHandle);
+		attr->DebugMappingHandle = NULL;
+	}
+#endif
 
 	// Close event handles
 	if (attr->InputEvent != NULL)
@@ -559,12 +652,23 @@ VOID CompleteReadRequest(PDEVICE_CONTEXT devContext, UCHAR ReportId)
 		goto errorExit;
 	}
 
-	if (bytesReturned > 1)
-	{
-		UCHAR reportSize = (devContext->ControllerSubType == DuoControllerSubTypeDualShock4)
-		? DS4_REPORT_SIZE : DS_REPORT_SIZE;
+		if (bytesReturned > 1)
+		{
+			UCHAR reportSize;
+			switch (devContext->ControllerSubType)
+			{
+			case DuoControllerSubTypeDualShock4:
+				reportSize = DS4_REPORT_SIZE;
+				break;
+			case DuoControllerSubTypeXbox:
+				reportSize = XB1_REPORT_SIZE;
+				break;
+			default:
+				reportSize = DS_REPORT_SIZE;
+				break;
+			}
 
-	RtlCopyMemory(pReadReport, devContext->DsInputReport,
+	RtlCopyMemory(pReadReport, devContext->InputReport,
 		bytesReturned < reportSize ? bytesReturned : reportSize);
 	}
 

@@ -133,6 +133,8 @@ NTSTATUS WriteReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 	NTSTATUS status;
 	HID_XFER_PACKET packet;
 
+	WriteDebugLog(QueueContext->DeviceContext, "[DRV] WriteReport called");
+
 	status = RequestGetHidXferPacket_ToWriteToDevice(
 		Request,
 		&packet);
@@ -141,6 +143,7 @@ NTSTATUS WriteReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_IOCTL,
 			"RequestGetHidXferPacket_ToWriteToDevice failed %!STATUS!",
 			status);
+		WriteDebugLog(QueueContext->DeviceContext, "[DRV] WriteReport: RequestGetHidXferPacket failed 0x%08X", status);
 		return status;
 	}
 
@@ -151,6 +154,13 @@ NTSTATUS WriteReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 			"WriteReport: input buffer too small!");
 		return status;
 	}
+
+	WriteDebugLog(QueueContext->DeviceContext, "[DRV] WriteReport: reportId=%d bufLen=%d first4=[%02X %02X %02X %02X]",
+		packet.reportId, packet.reportBufferLen,
+		packet.reportBufferLen > 0 ? packet.reportBuffer[0] : 0,
+		packet.reportBufferLen > 1 ? packet.reportBuffer[1] : 0,
+		packet.reportBufferLen > 2 ? packet.reportBuffer[2] : 0,
+		packet.reportBufferLen > 3 ? packet.reportBuffer[3] : 0);
 
 	// Store the output report (DS 47-byte or DS4 31-byte)
 	if (packet.reportBufferLen >= sizeof(DS_OUTPUT_REPORT))
@@ -393,6 +403,9 @@ NTSTATUS GetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 		return status;
 	}
 
+	WriteDebugLog(QueueContext->DeviceContext, "[DRV] GetFeature: reportId=%d bufLen=%d",
+		packet.reportId, packet.reportBufferLen);
+
 	UNREFERENCED_PARAMETER(QueueContext);
 
 	if (packet.reportBufferLen > 0)
@@ -486,6 +499,13 @@ NTSTATUS SetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request)
 		return status;
 	}
 
+	WriteDebugLog(QueueContext->DeviceContext, "[DRV] SetFeature: reportId=%d bufLen=%d first4=[%02X %02X %02X %02X]",
+		packet.reportId, reportSize,
+		reportSize > 0 ? packet.reportBuffer[0] : 0,
+		reportSize > 1 ? packet.reportBuffer[1] : 0,
+		reportSize > 2 ? packet.reportBuffer[2] : 0,
+		reportSize > 3 ? packet.reportBuffer[3] : 0);
+
 	QueueContext->DeviceContext->ReportPacket = packet;
 
 	WriteResponseToOutputClient(QueueContext);
@@ -546,6 +566,8 @@ NTSTATUS SetOutputReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Reque
 	HID_XFER_PACKET packet;
 	ULONG reportSize;
 
+	WriteDebugLog(QueueContext->DeviceContext, "[DRV] SetOutputReport called");
+
 	status = RequestGetHidXferPacket_ToWriteToDevice(
 		Request,
 		&packet);
@@ -554,6 +576,7 @@ NTSTATUS SetOutputReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Reque
 		TraceEvents(TRACE_LEVEL_ERROR, TRACE_IOCTL,
 			"RequestGetHidXferPacket_ToWriteToDevice failed %!STATUS!",
 			status);
+		WriteDebugLog(QueueContext->DeviceContext, "[DRV] SetOutputReport: RequestGetHidXferPacket failed 0x%08X", status);
 		return status;
 	}
 
@@ -569,12 +592,53 @@ NTSTATUS SetOutputReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Reque
 		return status;
 	}
 
+	WriteDebugLog(QueueContext->DeviceContext, "[DRV] SetOutputReport: reportId=%d bufLen=%d first4=[%02X %02X %02X %02X]",
+		packet.reportId, reportSize,
+		reportSize > 0 ? packet.reportBuffer[0] : 0,
+		reportSize > 1 ? packet.reportBuffer[1] : 0,
+		reportSize > 2 ? packet.reportBuffer[2] : 0,
+		reportSize > 3 ? packet.reportBuffer[3] : 0);
+
 	TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_IOCTL,
 		"ReportId: %d, ReportBufferLength: %d\n",
 		packet.reportId,
 		reportSize);
 
-	QueueContext->DeviceContext->ReportPacket = packet;
+	// The UMDF IOCTL strips the report ID from the report buffer
+	// (it is passed separately via the output buffer length workaround).
+	// The client-side FFB thread expects the report ID as the first byte
+	// in shared memory (e.g. outputMem[0] == XB1_OUTPUT_REPORT_ID).
+	// Prepend the report ID byte before writing to the output shared memory.
+	PSHARED_MEMORY_SERVER_ATTRIBUTES attr =
+		&QueueContext->DeviceContext->SharedMemServerAttributes;
+
+	if (attr->OutputView != NULL &&
+		WaitForSingleObject(attr->StopEvent, 0) != WAIT_OBJECT_0)
+	{
+		PBYTE outputView = (PBYTE)attr->OutputView;
+		// Write report ID as the first byte
+		outputView[0] = (BYTE)packet.reportId;
+		// Copy the report data after the report ID
+		size_t dataLen = reportSize < (DS_OUTPUT_REPORT_SIZE - 1)
+			? reportSize : (DS_OUTPUT_REPORT_SIZE - 1);
+		if (dataLen > 0)
+		{
+			RtlCopyMemory(
+				outputView + 1,
+				packet.reportBuffer,
+				dataLen);
+		}
+		SetEvent(attr->OutputEvent);
+		WriteDebugLog(QueueContext->DeviceContext, "[DRV] SetOutputReport: wrote to shared memory, event signaled. OutputView=[%02X %02X %02X %02X %02X %02X %02X %02X]",
+			outputView[0], outputView[1], outputView[2], outputView[3],
+			outputView[4], outputView[5], outputView[6], outputView[7]);
+	}
+	else
+	{
+		WriteDebugLog(QueueContext->DeviceContext, "[DRV] SetOutputReport: OutputView=%p StopEvent check=%d",
+			attr->OutputView,
+			attr->StopEvent ? WaitForSingleObject(attr->StopEvent, 0) : -1);
+	}
 
 	// Report how many bytes were copied
 	WdfRequestSetInformation(Request, reportSize);
@@ -655,10 +719,23 @@ NTSTATUS GetIndexedString(_In_ WDFREQUEST Request, _In_ PDEVICE_CONTEXT DeviceCo
 		switch (stringIndex)
 		{
 		case HID_DEVICE_MANUFACTURER_STRING_INDEX:
-			status = RequestCopyFromBuffer(Request, HID_DEVICE_MANUFACTURER_STRING, sizeof(HID_DEVICE_MANUFACTURER_STRING));
+			{
+				PWSTR manufacturerString = (DeviceContext->ControllerSubType == DuoControllerSubTypeXbox)
+					? HID_DEVICE_MANUFACTURER_STRING_MICROSOFT
+					: HID_DEVICE_MANUFACTURER_STRING_SONY;
+				size_t manufacturerSize = (DeviceContext->ControllerSubType == DuoControllerSubTypeXbox)
+					? sizeof(HID_DEVICE_MANUFACTURER_STRING_MICROSOFT)
+					: sizeof(HID_DEVICE_MANUFACTURER_STRING_SONY);
+				status = RequestCopyFromBuffer(Request, manufacturerString, manufacturerSize);
+			}
 			break;
 		case HID_DEVICE_PRODUCT_STRING_INDEX:
-			if (DeviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
+			if (DeviceContext->ControllerSubType == DuoControllerSubTypeXbox)
+			{
+				productString = HID_DEVICE_PRODUCT_STRING_XBOX;
+				productStringSize = sizeof(HID_DEVICE_PRODUCT_STRING_XBOX);
+			}
+			else if (DeviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
 			{
 				productString = HID_DEVICE_PRODUCT_STRING_DS4;
 				productStringSize = sizeof(HID_DEVICE_PRODUCT_STRING_DS4);
@@ -711,11 +788,24 @@ NTSTATUS GetString(_In_ WDFREQUEST Request, _In_ PDEVICE_CONTEXT DeviceContext)
 	switch (stringId)
 	{
 	case HID_STRING_ID_IMANUFACTURER:
-		stringSizeCb = sizeof(HID_DEVICE_MANUFACTURER_STRING);
-		string = HID_DEVICE_MANUFACTURER_STRING;
+		if (DeviceContext->ControllerSubType == DuoControllerSubTypeXbox)
+		{
+			stringSizeCb = sizeof(HID_DEVICE_MANUFACTURER_STRING_MICROSOFT);
+			string = HID_DEVICE_MANUFACTURER_STRING_MICROSOFT;
+		}
+		else
+		{
+			stringSizeCb = sizeof(HID_DEVICE_MANUFACTURER_STRING_SONY);
+			string = HID_DEVICE_MANUFACTURER_STRING_SONY;
+		}
 		break;
 	case HID_STRING_ID_IPRODUCT:
-		if (DeviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
+		if (DeviceContext->ControllerSubType == DuoControllerSubTypeXbox)
+		{
+			stringSizeCb = sizeof(HID_DEVICE_PRODUCT_STRING_XBOX);
+			string = HID_DEVICE_PRODUCT_STRING_XBOX;
+		}
+		else if (DeviceContext->ControllerSubType == DuoControllerSubTypeDualShock4)
 		{
 			stringSizeCb = sizeof(HID_DEVICE_PRODUCT_STRING_DS4);
 			string = HID_DEVICE_PRODUCT_STRING_DS4;
