@@ -31,8 +31,6 @@
 #define SHM_OUTPUT_EVENT_SUFFIX L"output_event"
 #define SHM_DEBUG_SUFFIX L"debug"
 
-#define SHM_NAME_BUFFER_SIZE 512
-
 /// <summary>
 /// Creates the shared memory server infrastructure for inter-process communication with the DuoController library.
 /// Sets up input/output file mappings, synchronization events, security attributes, and starts the input processing thread.
@@ -73,7 +71,7 @@ DWORD CreateSharedMemoryServer(LPVOID Params)
 
 	// Build input shared memory name
 	int res = swprintf_s(attr->InputMemName,
-		SHM_NAME_BUFFER_SIZE,
+		ARRAYSIZE(attr->InputMemName),
 		SHM_NAME_FORMAT,
 		SHM_NAMESPACE_PREFIX,
 		sanitizedInstanceId,
@@ -89,7 +87,7 @@ DWORD CreateSharedMemoryServer(LPVOID Params)
 
 	// Build output shared memory name
 	res = swprintf_s(attr->OutputMemName,
-		SHM_NAME_BUFFER_SIZE,
+		ARRAYSIZE(attr->OutputMemName),
 		SHM_NAME_FORMAT,
 		SHM_NAMESPACE_PREFIX,
 		sanitizedInstanceId,
@@ -105,7 +103,7 @@ DWORD CreateSharedMemoryServer(LPVOID Params)
 
 	// Build input event name
 	res = swprintf_s(attr->InputEventName,
-		SHM_NAME_BUFFER_SIZE,
+		ARRAYSIZE(attr->InputEventName),
 		SHM_NAME_FORMAT,
 		SHM_NAMESPACE_PREFIX,
 		sanitizedInstanceId,
@@ -121,7 +119,7 @@ DWORD CreateSharedMemoryServer(LPVOID Params)
 
 	// Build output event name
 	res = swprintf_s(attr->OutputEventName,
-		SHM_NAME_BUFFER_SIZE,
+		ARRAYSIZE(attr->OutputEventName),
 		SHM_NAME_FORMAT,
 		SHM_NAMESPACE_PREFIX,
 		sanitizedInstanceId,
@@ -279,7 +277,7 @@ DWORD CreateSharedMemoryServer(LPVOID Params)
 	// Create debug shared memory
 	{
 		res = swprintf_s(attr->DebugMemName,
-			SHM_NAME_BUFFER_SIZE,
+			ARRAYSIZE(attr->DebugMemName),
 			SHM_NAME_FORMAT,
 			SHM_NAMESPACE_PREFIX,
 			sanitizedInstanceId,

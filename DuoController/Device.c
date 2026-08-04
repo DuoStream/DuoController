@@ -550,7 +550,7 @@ HID_DESCRIPTOR G_XboxHidDescriptor = {
 
 /// <summary>
 /// Parses the PID from a device instance ID string.
-/// Instance ID format: ROOT\VID_054C&PID_XXXX&DUOCONTROLLER\0000
+/// Instance ID format: ROOT\VID_054C&PID_XXXX&DUOCONTROLLER&<token>\0000
 /// </summary>
 /// <param name="DeviceInstanceId">The device instance ID string.</param>
 /// <returns>The parsed product ID, or 0 on failure.</returns>
@@ -704,17 +704,33 @@ NTSTATUS DuoControllerCreateDevice(_Inout_ PWDFDEVICE_INIT DeviceInit)
 			deviceContext->HidDeviceAttributes.ProductID = pid;
 
 			// Generate a unique serial number from the device instance ID.
-			// Instance ID format: ROOT\VID_054C&PID_XXXX&DUOCONTROLLER\0000
-			// We use the suffix after the last backslash for uniqueness.
-			WCHAR* serialStart = wcsrchr(deviceInstanceId, L'\\');
-			if (serialStart != NULL)
+			// Instance ID format: ROOT\VID_054C&PID_XXXX&DUOCONTROLLER&<token>\0000
+			// The <token> is unique per creation, so the serial stays unique across
+			// pads even though the trailing instance number is reused by Windows.
+			WCHAR* tokenStart = wcsrchr(deviceInstanceId, L'&');
+			WCHAR* tokenEnd = wcsrchr(deviceInstanceId, L'\\');
+			if (tokenStart != NULL && tokenEnd != NULL && tokenEnd > tokenStart)
 			{
-				serialStart++;
-				wcscpy_s(deviceContext->SerialNumber, HID_DEVICE_SERIAL_NUMBER_MAX_LEN, serialStart);
+				size_t tokenLen = (size_t)(tokenEnd - tokenStart - 1);
+				if (tokenLen < HID_DEVICE_SERIAL_NUMBER_MAX_LEN)
+				{
+					RtlCopyMemory(deviceContext->SerialNumber, tokenStart + 1, tokenLen * sizeof(WCHAR));
+					deviceContext->SerialNumber[tokenLen] = L'\0';
+				}
 			}
 			else
 			{
-				wcscpy_s(deviceContext->SerialNumber, HID_DEVICE_SERIAL_NUMBER_MAX_LEN, deviceInstanceId);
+				// Fallback: use the text after the last backslash.
+				tokenStart = wcsrchr(deviceInstanceId, L'\\');
+				if (tokenStart != NULL)
+				{
+					tokenStart++;
+					wcscpy_s(deviceContext->SerialNumber, HID_DEVICE_SERIAL_NUMBER_MAX_LEN, tokenStart);
+				}
+				else
+				{
+					wcscpy_s(deviceContext->SerialNumber, HID_DEVICE_SERIAL_NUMBER_MAX_LEN, deviceInstanceId);
+				}
 			}
 
 			WdfObjectDelete(deviceInstanceIdMemory);

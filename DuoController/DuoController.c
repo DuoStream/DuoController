@@ -151,6 +151,30 @@ static BOOL IsProcessElevated()
 	return elevated;
 }
 
+// Generates a fresh, unique per-creation token (32 lowercase hex chars) that is
+// embedded in the device-ID seed. A new token on every creation guarantees the
+// resulting device instance ID is never a reincarnation of a previously
+// installed (and removed) controller, so running applications see a genuine
+// new-device arrival for each pad instead of a reused instance identity.
+// The token combines the system tick count, process ID, and a monotonic
+// counter, so it cannot repeat within a boot and only in a negligible case
+// across reboots.
+static void GenerateUniqueDeviceToken(WCHAR* token, DWORD tokenSize)
+{
+	static volatile LONG tokenCounter;
+	ULONGLONG tick = GetTickCount64();
+	swprintf_s(token, tokenSize,
+		L"%08x%08x%08x%08x",
+		(DWORD)tick, (DWORD)(tick >> 32),
+		GetCurrentProcessId(),
+		(DWORD)InterlockedIncrement(&tokenCounter));
+}
+
+static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId);
+static HRESULT RemoveDualSenseController(DUO_CONTROLLER* controller);
+static HRESULT RemoveDualShock4Controller(DUO_CONTROLLER* controller);
+static HRESULT RemoveXboxController(DUO_CONTROLLER* controller);
+
 static HRESULT InstallDuoControllerDevice(const WCHAR* hardwareId, const WCHAR* deviceIdSeed, WCHAR* instanceId, DWORD instanceIdSize, WCHAR* hidInstanceId, DWORD hidInstanceIdSize)
 {
 	HRESULT result = S_OK;
@@ -184,11 +208,22 @@ static HRESULT InstallDuoControllerDevice(const WCHAR* hardwareId, const WCHAR* 
 		return HRESULT_FROM_WIN32(GetLastError());
 	BOOL rebootRequired = FALSE;
 	SetupCopyOEMInfW(fullInfPath, NULL, SPOST_NONE, SP_COPY_NOOVERWRITE, NULL, 0, NULL, NULL);
-	if (!DiInstallDriverW(NULL, fullInfPath, DIIRFLAG_FORCE_INF, &rebootRequired))
+	// Install the driver package without DIIRFLAG_FORCE_INF. That flag makes
+	// DiInstallDriverW reinstall the driver onto every device matching the INF's
+	// hardware IDs, which restarts existing pads whenever a new pad is created
+	// (the multi-controller disconnect/reconnect storm). Without it, an already
+	// imported package of equal version updates no device; DiInstallDriverW then
+	// returns ERROR_NO_MORE_ITEMS, which is expected here and must not be
+	// treated as a failure.
+	if (!DiInstallDriverW(NULL, fullInfPath, 0, &rebootRequired))
 	{
-		result = HRESULT_FROM_WIN32(GetLastError());
-		SetupDiDestroyDeviceInfoList(hDevInfo);
-		return result;
+		DWORD dwError = GetLastError();
+		if (dwError != ERROR_NO_MORE_ITEMS)
+		{
+			result = HRESULT_FROM_WIN32(dwError);
+			SetupDiDestroyDeviceInfoList(hDevInfo);
+			return result;
+		}
 	}
 	SP_DEVINFO_DATA devInfoData;
 	ZeroMemory(&devInfoData, sizeof(devInfoData));
@@ -227,37 +262,26 @@ static HRESULT InstallDuoControllerDevice(const WCHAR* hardwareId, const WCHAR* 
 		if (!DiInstallDevice(NULL, hDevInfo, &devInfoData, NULL, DIIDFLAG_INSTALLCOPYINFDRIVERS, &rebootRequired))
 		{
 			result = HRESULT_FROM_WIN32(GetLastError());
+			// The devnode was already registered by DIF_REGISTERDEVICE above, so a
+			// failed install leaves a not-started ghost device behind. Remove it so
+			// repeated failed creates do not accumulate stale pads.
+			RemoveDuoControllerDevice(instanceId);
 			SetupDiDestroyDeviceInfoList(hDevInfo);
 			return result;
 		}
 		if (hidInstanceId != NULL && hidInstanceIdSize > 0)
 		{
+			// The mshidumdf HID child ID is recorded nowhere that it is later
+			// consumed: removal removes the parent devnode and the child is torn
+			// down by PnP as part of the cascade. Polling for the child here used
+			// to block every create for the full poll window while the child lagged
+			// behind the parent's start, which stalled the creating application's
+			// input thread (apps such as Sunshine create pads synchronously from
+			// their input loop). The objects the connect phase actually needs are
+			// the shared-memory mappings created by the driver during device add,
+			// and those are polled for directly by the Ds/Ds4/XboxConnect* helpers
+			// below. Leave the ID empty instead of blocking.
 			hidInstanceId[0] = L'\0';
-			ULONGLONG pollStart = GetTickCount64();
-			while ((GetTickCount64() - pollStart) < 5000)
-			{
-				WCHAR mutableId[256];
-				wcscpy_s(mutableId, ARRAYSIZE(mutableId), instanceId);
-				DEVINST rootDevInst;
-				if (CM_Locate_DevNodeW(&rootDevInst, mutableId, CM_LOCATE_DEVNODE_NORMAL) == CR_SUCCESS)
-				{
-					DEVINST childDevInst;
-					if (CM_Get_Child(&childDevInst, rootDevInst, 0) == CR_SUCCESS)
-					{
-						WCHAR childId[256];
-						ULONG len = ARRAYSIZE(childId);
-						if (CM_Get_Device_IDW(childDevInst, childId, len, 0) == CR_SUCCESS)
-						{
-							if (wcsstr(childId, deviceIdSeed) != NULL)
-							{
-								wcscpy_s(hidInstanceId, hidInstanceIdSize, childId);
-								break;
-							}
-						}
-					}
-				}
-				Sleep(100);
-			}
 		}
 		RegDeleteValueW(duoRegistryKey, valueName);
 		RegCloseKey(duoRegistryKey);
@@ -266,36 +290,17 @@ static HRESULT InstallDuoControllerDevice(const WCHAR* hardwareId, const WCHAR* 
 	return result;
 }
 
-static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId, const WCHAR* hidInstanceId)
+static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId)
 {
 	if (!IsProcessElevated())
 		return E_ACCESSDENIED;
-	if (hidInstanceId != NULL && hidInstanceId[0] != L'\0')
-	{
-		HDEVINFO hHidInfo = SetupDiCreateDeviceInfoList(NULL, NULL);
-		if (hHidInfo != INVALID_HANDLE_VALUE)
-		{
-			SP_DEVINFO_DATA hidDevInfoData;
-			hidDevInfoData.cbSize = sizeof(hidDevInfoData);
-			if (SetupDiOpenDeviceInfoW(hHidInfo, hidInstanceId, NULL, 0, &hidDevInfoData))
-			{
-				SP_REMOVEDEVICE_PARAMS removeParams;
-				ZeroMemory(&removeParams, sizeof(removeParams));
-				removeParams.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
-				removeParams.ClassInstallHeader.InstallFunction = DIF_REMOVE;
-				removeParams.Scope = DI_REMOVEDEVICE_GLOBAL;
-				if (SetupDiSetClassInstallParamsW(hHidInfo, &hidDevInfoData,
-					(PSP_CLASSINSTALL_HEADER)&removeParams, sizeof(removeParams)))
-				{
-					if (!SetupDiCallClassInstaller(DIF_REMOVE, hHidInfo, &hidDevInfoData))
-					{
-						SetupDiRemoveDevice(hHidInfo, &hidDevInfoData);
-					}
-				}
-			}
-			SetupDiDestroyDeviceInfoList(hHidInfo);
-		}
-	}
+
+	// Remove the parent device first. Its children (the HID PDO created by
+	// mshidumdf.sys) are removed as part of the cascade, so the HID child must
+	// not be removed on its own first. Removing the child first triggered a
+	// HID-class re-enumeration that briefly disconnected every other pad right
+	// when a new pad was being added, causing applications to drop the new
+	// pad's arrival notification (detection is notification-driven).
 	HDEVINFO hDevInfo = SetupDiCreateDeviceInfoList(NULL, NULL);
 	if (hDevInfo == INVALID_HANDLE_VALUE)
 		return HRESULT_FROM_WIN32(GetLastError());
@@ -312,10 +317,15 @@ static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId, const WCHAR* h
 		if (SetupDiSetClassInstallParamsW(hDevInfo, &devInfoData,
 			(PSP_CLASSINSTALL_HEADER)&removeParams, sizeof(removeParams)))
 		{
-			if (SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfoData) || SetupDiRemoveDevice(hDevInfo, &devInfoData))
+			if (SetupDiCallClassInstaller(DIF_REMOVE, hDevInfo, &devInfoData) ||
+				SetupDiRemoveDevice(hDevInfo, &devInfoData))
+			{
 				result = S_OK;
+			}
 			else
+			{
 				result = HRESULT_FROM_WIN32(GetLastError());
+			}
 		}
 		else
 		{
@@ -323,6 +333,25 @@ static HRESULT RemoveDuoControllerDevice(const WCHAR* instanceId, const WCHAR* h
 		}
 	}
 	SetupDiDestroyDeviceInfoList(hDevInfo);
+
+	// Wait for the devnode to actually disappear. PnP removes the device
+	// asynchronously; re-creating with the same seed before removal completes
+	// makes Windows assign a new instance ID and can leave a stale/ghost node,
+	// which in turn makes applications miss the next connect.
+	if (SUCCEEDED(result))
+	{
+		ULONGLONG removeStart = GetTickCount64();
+		while ((GetTickCount64() - removeStart) < 10000)
+		{
+			WCHAR mutableId[256];
+			wcscpy_s(mutableId, ARRAYSIZE(mutableId), instanceId);
+			DEVINST devInst;
+			if (CM_Locate_DevNodeW(&devInst, mutableId, CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS)
+				break;
+			Sleep(100);
+		}
+	}
+
 	return result;
 }
 
@@ -541,8 +570,10 @@ static HRESULT CreateDualSenseController(DUO_CONTROLLER* controller, USHORT pid)
 	WCHAR hidInstanceId[256];
 	WCHAR hwid[64];
 	swprintf_s(hwid, ARRAYSIZE(hwid), L"Root\\VID_054C&PID_%04X", pid);
-	WCHAR seed[64];
-	swprintf_s(seed, ARRAYSIZE(seed), L"VID_054C&PID_%04X&DUOCONTROLLER", pid);
+	WCHAR token[40];
+	GenerateUniqueDeviceToken(token, ARRAYSIZE(token));
+	WCHAR seed[96];
+	swprintf_s(seed, ARRAYSIZE(seed), L"VID_054C&PID_%04X&DUOCONTROLLER&%s", pid, token);
 	HRESULT result = InstallDuoControllerDevice(hwid, seed, instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
 	if (FAILED(result))
 		return result;
@@ -561,16 +592,13 @@ static HRESULT CreateDualSenseController(DUO_CONTROLLER* controller, USHORT pid)
 	result = DsConnectInput(controller);
 	if (FAILED(result))
 	{
-#pragma warning(suppress:4366)
-		DeleteCriticalSection(&controller->DsCs);
+		RemoveDualSenseController(controller);
 		return result;
 	}
 	result = DsConnectFfb(controller);
 	if (FAILED(result))
 	{
-		DsDisconnectInput(controller);
-#pragma warning(suppress:4366)
-		DeleteCriticalSection(&controller->DsCs);
+		RemoveDualSenseController(controller);
 		return result;
 	}
 	return S_OK;
@@ -582,7 +610,7 @@ static HRESULT RemoveDualSenseController(DUO_CONTROLLER* controller)
 	DsDisconnectInput(controller);
 #pragma warning(suppress:4366)
 	DeleteCriticalSection(&controller->DsCs);
-	return RemoveDuoControllerDevice(controller->DsInstanceId, controller->DsHidInstanceId);
+	return RemoveDuoControllerDevice(controller->DsInstanceId);
 }
 
 static HRESULT SendDsReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REPORT_DUALSENSE* inputReport)
@@ -846,7 +874,11 @@ static HRESULT CreateDualShock4Controller(DUO_CONTROLLER* controller)
 {
 	WCHAR instanceId[256];
 	WCHAR hidInstanceId[256];
-	HRESULT result = InstallDuoControllerDevice(L"Root\\VID_054C&PID_05C4", L"VID_054C&PID_05C4&DUOCONTROLLER", instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
+	WCHAR token[40];
+	GenerateUniqueDeviceToken(token, ARRAYSIZE(token));
+	WCHAR seed[96];
+	swprintf_s(seed, ARRAYSIZE(seed), L"VID_054C&PID_05C4&DUOCONTROLLER&%s", token);
+	HRESULT result = InstallDuoControllerDevice(L"Root\\VID_054C&PID_05C4", seed, instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
 	if (FAILED(result))
 		return result;
 	wcscpy_s(controller->Ds4InstanceId, ARRAYSIZE(controller->Ds4InstanceId), instanceId);
@@ -864,16 +896,13 @@ static HRESULT CreateDualShock4Controller(DUO_CONTROLLER* controller)
 	result = Ds4ConnectInput(controller);
 	if (FAILED(result))
 	{
-#pragma warning(suppress:4366)
-		DeleteCriticalSection(&controller->Ds4Cs);
+		RemoveDualShock4Controller(controller);
 		return result;
 	}
 	result = Ds4ConnectFfb(controller);
 	if (FAILED(result))
 	{
-		Ds4DisconnectInput(controller);
-#pragma warning(suppress:4366)
-		DeleteCriticalSection(&controller->Ds4Cs);
+		RemoveDualShock4Controller(controller);
 		return result;
 	}
 	return S_OK;
@@ -885,7 +914,7 @@ static HRESULT RemoveDualShock4Controller(DUO_CONTROLLER* controller)
 	Ds4DisconnectInput(controller);
 #pragma warning(suppress:4366)
 	DeleteCriticalSection(&controller->Ds4Cs);
-	return RemoveDuoControllerDevice(controller->Ds4InstanceId, controller->Ds4HidInstanceId);
+	return RemoveDuoControllerDevice(controller->Ds4InstanceId);
 }
 
 static HRESULT SendDs4Report(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REPORT_DS4* inputReport)
@@ -1303,7 +1332,11 @@ static HRESULT CreateXboxController(DUO_CONTROLLER* controller)
 {
 	WCHAR instanceId[256];
 	WCHAR hidInstanceId[256];
-	HRESULT result = InstallDuoControllerDevice(L"Root\\VID_045E&PID_02FF&IG_00", L"VID_045E&PID_02FF&DUOCONTROLLER", instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
+	WCHAR token[40];
+	GenerateUniqueDeviceToken(token, ARRAYSIZE(token));
+	WCHAR seed[96];
+	swprintf_s(seed, ARRAYSIZE(seed), L"VID_045E&PID_02FF&DUOCONTROLLER&%s", token);
+	HRESULT result = InstallDuoControllerDevice(L"Root\\VID_045E&PID_02FF&IG_00", seed, instanceId, ARRAYSIZE(instanceId), hidInstanceId, ARRAYSIZE(hidInstanceId));
 	if (FAILED(result))
 		return result;
 	wcscpy_s(controller->XboxInstanceId, ARRAYSIZE(controller->XboxInstanceId), instanceId);
@@ -1327,16 +1360,13 @@ static HRESULT CreateXboxController(DUO_CONTROLLER* controller)
 	result = XboxConnectInput(controller);
 	if (FAILED(result))
 	{
-#pragma warning(suppress:4366)
-		DeleteCriticalSection(&controller->XboxCs);
+		RemoveXboxController(controller);
 		return result;
 	}
 	result = XboxConnectFfb(controller);
 	if (FAILED(result))
 	{
-		XboxDisconnectInput(controller);
-#pragma warning(suppress:4366)
-		DeleteCriticalSection(&controller->XboxCs);
+		RemoveXboxController(controller);
 		return result;
 	}
 #ifdef _DEBUG
@@ -1354,7 +1384,7 @@ static HRESULT RemoveXboxController(DUO_CONTROLLER* controller)
 	XboxDisconnectInput(controller);
 #pragma warning(suppress:4366)
 	DeleteCriticalSection(&controller->XboxCs);
-	return RemoveDuoControllerDevice(controller->XboxInstanceId, controller->XboxHidInstanceId);
+	return RemoveDuoControllerDevice(controller->XboxInstanceId);
 }
 
 static HRESULT SendXboxReport(DUO_CONTROLLER* controller, DUO_CONTROLLER_INPUT_REPORT_XBOX* inputReport)

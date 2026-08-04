@@ -20,7 +20,7 @@
 /// report ID 1, centered sticks, neutral triggers, and zeroed IMU data.
 /// </summary>
 /// <param name="Report">Output buffer to receive the default DualSense report. Must be at least DS_REPORT_SIZE bytes.</param>
-VOID SetDefaultDsReport(_Out_ PUCHAR Report)
+VOID SetDefaultDsReport(_Out_writes_bytes_(DS_REPORT_SIZE) PUCHAR Report)
 {
 	// Initialize a default DualSense input report (Report ID 1) with neutral values
 	UCHAR DefaultReport[DS_REPORT_SIZE] =
@@ -43,7 +43,7 @@ VOID SetDefaultDsReport(_Out_ PUCHAR Report)
 /// report ID 1, centered sticks, neutral triggers, and zeroed IMU data.
 /// </summary>
 /// <param name="Report">Output buffer to receive the default DS4 report. Must be at least DS4_REPORT_SIZE bytes.</param>
-VOID SetDefaultDs4Report(_Out_ PUCHAR Report)
+VOID SetDefaultDs4Report(_Out_writes_bytes_(DS4_REPORT_SIZE) PUCHAR Report)
 {
 	// Initialize a default DS4 input report (Report ID 1) with neutral values
 	UCHAR DefaultReport[DS4_REPORT_SIZE] =
@@ -66,7 +66,7 @@ VOID SetDefaultDs4Report(_Out_ PUCHAR Report)
 /// report ID 1, centered sticks, neutral triggers, neutral D-Pad, and no buttons.
 /// </summary>
 /// <param name="Report">Output buffer to receive the default Xbox report. Must be at least XB1_REPORT_SIZE bytes.</param>
-VOID SetDefaultXboxReport(_Out_ PUCHAR Report)
+VOID SetDefaultXboxReport(_Out_writes_bytes_(XB1_REPORT_SIZE) PUCHAR Report)
 {
 	// Initialize a default Xbox input report (Report ID 1) with neutral values
 	UCHAR DefaultReport[XB1_REPORT_SIZE] =
